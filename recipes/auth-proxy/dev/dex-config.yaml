@@ -1,0 +1,38 @@
+# Dex (an OpenID Connect provider) configured with one static user, for the oauth2-proxy
+# recipe's dev/test setup only. See ../README.md before using any of this beyond that.
+#
+# dex.localtest.me is a public DNS name that resolves to 127.0.0.1. The compose file also gives
+# this dex service that name as a network alias, so inside the compose network it resolves to
+# this container instead. That lets oauth2-proxy (inside Docker) and a browser (outside Docker)
+# use the exact same issuer URL. The port matches the one published to the host (3441) on
+# purpose: a network alias only changes the hostname, not the port, so both paths have to agree
+# on 3441 too.
+issuer: http://dex.localtest.me:3441/dex
+storage:
+  type: memory
+web:
+  http: 0.0.0.0:3441
+oauth2:
+  skipApprovalScreen: true
+expiry:
+  signingKeys: "4h"
+  idTokens: "1h"
+
+staticClients:
+  - id: openvoid-oauth2-proxy
+    name: OpenVoid oauth2-proxy
+    secret: openvoid-dev-client-secret
+    redirectURIs:
+      - http://localhost:3440/oauth2/callback
+
+# Dex's local password connector. It has no concept of groups: staticPasswords has no groups
+# field and the password connector never emits a groups claim. If you need the proxy to see
+# groups, use Authelia (../authelia) or point oauth2-proxy at Keycloak instead, both of which
+# carry groups from their own user stores.
+enablePasswordDB: true
+staticPasswords:
+  # email: doc@example.com, password: doc-flux-capacitor-88 (dev-only, see ../README.md)
+  - email: "doc@example.com"
+    hash: "$2b$12$RMP5S7qcppsWlljglL2zQe1affrulGPYdIZM96qk1XWmogaIjWFI2"
+    username: "doc"
+    userID: "doc-static-user"
