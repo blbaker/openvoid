@@ -1,0 +1,13 @@
+# One container, everything on a volume: SQLite for void/db and void/kv, files for void/storage.
+# Copy next to the Dockerfile in your app's root, run `npm run build`, then `docker compose up`.
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - openvoid-data:/data
+    restart: unless-stopped
+
+volumes:
+  openvoid-data:

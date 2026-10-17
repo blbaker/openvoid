@@ -1,0 +1,68 @@
+# Separate services: PostgreSQL for void/db, Redis for void/kv, S3-compatible storage (SeaweedFS)
+# for void/storage. Use with an app whose void.config.ts sets database: 'pg'.
+# Copy next to the Dockerfile in your app's root, run `npm run build`, then:
+#   docker compose -f compose.full.yaml up
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://openvoid:${POSTGRES_PASSWORD:-change-me}@postgres:5432/openvoid
+      OPENVOID_KV: redis://redis:6379
+      OPENVOID_STORAGE: s3://openvoid
+      OPENVOID_S3_FORCE_PATH_STYLE: "1"
+      AWS_ENDPOINT_URL_S3: http://s3:8333
+      AWS_REGION: us-east-1
+      # SeaweedFS runs without S3 auth here; real S3 reads keys from your environment or IAM role.
+      AWS_ACCESS_KEY_ID: openvoid
+      AWS_SECRET_ACCESS_KEY: openvoid
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      s3-bucket:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: openvoid
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: openvoid
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "openvoid", "-d", "openvoid"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
+
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: ["server", "-s3", "-dir=/data"]
+    volumes:
+      - s3-data:/data
+
+  # Creates the bucket once S3 answers.
+  s3-bucket:
+    image: curlimages/curl:latest
+    depends_on:
+      - s3
+    command: ["sh", "-c", "until curl -sf -X PUT http://s3:8333/openvoid; do sleep 1; done"]
+
+volumes:
+  postgres-data:
+  redis-data:
+  s3-data:

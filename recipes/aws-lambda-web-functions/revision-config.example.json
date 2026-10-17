@@ -1,0 +1,17 @@
+{
+  "buildConfig": {
+    "codeConfig": {
+      "s3Object": { "bucket": "CODE_BUCKET", "key": "my-app/app.zip" }
+    },
+    "runtimeConfig": { "runtime": "nodejs24.x" }
+  },
+  "serviceConfig": {
+    "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/my-app-openvoid",
+    "environmentVariables": {
+      "DATABASE_URL": "postgres://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require",
+      "OPENVOID_KV": "dynamodb:TABLE_NAME",
+      "OPENVOID_STORAGE": "s3://BUCKET_NAME",
+      "OPENVOID_MIGRATE": "off"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+[Unit]
+Description=my-app (OpenVoid)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=my-app
+WorkingDirectory=/srv/my-app
+ExecStart=/usr/bin/node dist/ssr/index.js
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+Environment=OPENVOID_DATA_DIR=/var/lib/my-app
+# Secrets such as DATABASE_URL go in a root-only file instead of this unit:
+# EnvironmentFile=/etc/my-app.env
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/my-app
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
