@@ -1,0 +1,23 @@
+# Caddy in front of the app, delegating to Authelia for who-is-signed-in. Authelia 4.38+ refuses
+# to start unless authelia_url and default_redirection_url (below, in configuration.yml) are
+# https, so Caddy terminates TLS here with its own internal CA (good enough for local dev/test;
+# a real deployment would use ACME-issued certificates for real domains instead of `tls
+# internal`, and wouldn't need the extra -k/insecure flag this recipe's manual test used).
+# app.localtest.me and auth.localtest.me are public DNS names that resolve to 127.0.0.1, so a
+# browser on the host reaches both without any /etc/hosts changes.
+auth.localtest.me {
+	tls internal
+	reverse_proxy authelia:9091
+}
+
+app.localtest.me {
+	tls internal
+	forward_auth authelia:9091 {
+		uri /api/authz/forward-auth?authelia_url=https://auth.localtest.me:3442/
+		copy_headers Remote-User Remote-Groups Remote-Email Remote-Name
+	}
+
+	reverse_proxy app:3000 {
+		header_up X-OpenVoid-Proxy-Secret {$OPENVOID_AUTH_PROXY_SECRET}
+	}
+}

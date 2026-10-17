@@ -1,0 +1,12 @@
+# File-based user database for the dev/test setup. See ../README.md before using this beyond
+# that; a real deployment should use Authelia's LDAP backend or at least a generated hash.
+users:
+  marty:
+    disabled: false
+    displayname: 'Marty McFly'
+    # password: marty-mcfly-1985 (dev-only, see ../README.md)
+    password: '$argon2id$v=19$m=65536,t=3,p=4$pV+GZG66iwKtQyXYaZPZ6g$oSughF4L9537kVOsFJ9BT+ZdDNeMC7OoWee3l6tYeZk'
+    email: 'marty@example.com'
+    groups:
+      - 'family'
+      - 'admins'
