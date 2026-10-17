@@ -17,7 +17,15 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-SCENARIOS=${*:-local dev services lambda docker compose proxy}
+# Extra scenarios live in scripts/e2e.d/<name>.sh, each defining scenario_<name>.
+EXTRA_SCENARIOS=""
+for extra in "$ROOT"/scripts/e2e.d/*.sh; do
+  [ -e "$extra" ] || continue
+  # shellcheck source=/dev/null
+  source "$extra"
+  EXTRA_SCENARIOS="$EXTRA_SCENARIOS $(basename "$extra" .sh)"
+done
+SCENARIOS=${*:-local dev services lambda docker compose proxy$EXTRA_SCENARIOS}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/openvoid-e2e.XXXXXX")
 PIDS=()
 CONTAINERS=()
