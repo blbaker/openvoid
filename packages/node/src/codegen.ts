@@ -95,11 +95,20 @@ export function migrationsModule(dir: string): string {
   return `export default ${JSON.stringify(readMigrations(dir))};\n`;
 }
 
+export function readFgaModel(path: string): string | null {
+  return existsSync(path) ? readFileSync(path, 'utf8') : null;
+}
+
+export function fgaModelModule(path: string): string {
+  return `export default ${JSON.stringify(readFgaModel(path))};\n`;
+}
+
 export function serverEntryModule(dialect: Dialect): string {
   return `import app from "./app.js";
 import migrations from "virtual:openvoid-migrations";
+import fgaModel from "virtual:openvoid-fga-model";
 import { startServer } from "@openvoid/node/server";
 
-await startServer({ app, migrations, dialect: ${JSON.stringify(dialect)} });
+await startServer({ app, migrations, fgaModel, dialect: ${JSON.stringify(dialect)} });
 `;
 }

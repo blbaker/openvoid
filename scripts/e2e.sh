@@ -13,10 +13,11 @@
 #            read-only code dir, writable /tmp only, AWS_LAMBDA_HTTP_ENDPOINT, DynamoDB + S3 + PG
 #   docker   notes built into the recipes/docker image, data on a volume, survives a restart
 #   compose  notes-pg with recipes/docker/compose.full.yaml (PostgreSQL, Redis, SeaweedFS)
+#   proxy    notes with OPENVOID_AUTH=proxy: identity headers count only with the shared secret
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-SCENARIOS=${*:-local dev services lambda docker compose}
+SCENARIOS=${*:-local dev services lambda docker compose proxy}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/openvoid-e2e.XXXXXX")
 PIDS=()
 CONTAINERS=()
@@ -74,7 +75,7 @@ service_env() {
 # A fresh PostgreSQL database per scenario, so runs never see each other's tables.
 fresh_database() {
   local name="e2e_$1_$$"
-  docker exec openvoid-test-pg psql -q -U openvoid -d openvoid -c "DROP DATABASE IF EXISTS $name" -c "CREATE DATABASE $name" >/dev/null 2>&1
+  docker exec "${OPENVOID_SERVICES_PREFIX:-openvoid-test}-pg" psql -q -U openvoid -d openvoid -c "DROP DATABASE IF EXISTS $name" -c "CREATE DATABASE $name" >/dev/null 2>&1
   echo "${OPENVOID_TEST_DATABASE_URL%/*}/$name"
 }
 
@@ -172,6 +173,20 @@ scenario_compose() {
   (cd "$ctx" && docker compose -f compose.full.yaml -p openvoid-e2e up -d --build --quiet-pull >/dev/null 2>&1)
   wait_http "http://127.0.0.1:$port/api/health" 90
   smoke "http://127.0.0.1:$port"
+}
+
+scenario_proxy() {
+  log "proxy: OPENVOID_AUTH=proxy with a shared secret"
+  local port=3407 base="http://127.0.0.1:3407"
+  start_bg "$WORK/proxy.log" "cd '$ROOT/examples/notes' && OPENVOID_DATA_DIR='$WORK/proxy-data' OPENVOID_AUTH=proxy OPENVOID_AUTH_PROXY_SECRET=e2e-secret HOST=127.0.0.1 PORT=$port exec node dist/ssr/index.js"
+  wait_http "$base/api/health"
+  smoke "$base"
+  local who=(-H 'x-forwarded-user: doc' -H 'x-forwarded-email: doc@example.com' -H 'x-forwarded-groups: family,admins')
+  test "$(curl -s -o /dev/null -w '%{http_code}' "${who[@]}" "$base/api/me")" = 401
+  echo "PASS  identity headers without the secret are ignored"
+  curl -sf "${who[@]}" -H 'x-openvoid-proxy-secret: e2e-secret' "$base/api/me" >"$WORK/me.json"
+  grep -q '"id":"proxy:doc"' "$WORK/me.json" && grep -q '"groups":\["family","admins"\]' "$WORK/me.json"
+  echo "PASS  /api/me returns the proxy user with the secret"
 }
 
 build_examples

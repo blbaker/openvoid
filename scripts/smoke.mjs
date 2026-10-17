@@ -32,6 +32,10 @@ const checks = [
     assert.equal(r.json.ok, true);
     assert.equal(r.json.app, process.env.EXPECT_APP_NAME ?? 'OpenVoid notes', 'void/env value');
   }],
+  ['anonymous request to a signed-in route', async () => {
+    const r = await call('GET', '/api/me');
+    assert.equal(r.status, 401, r.text);
+  }],
   ['void/db insert + select', async () => {
     const created = await call('POST', '/api/notes', { title: `note ${run}` });
     assert.equal(created.status, 201, created.text);

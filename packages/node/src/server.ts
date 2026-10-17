@@ -8,6 +8,7 @@ import { closeEnv, createEnv, type Dialect } from './env.ts';
 import { applyPgMigrations, applySqliteMigrations, type Migration } from './migrate.ts';
 import { runWithEnv, setGlobalEnv } from './scope.ts';
 import type { SqliteD1Database } from './bindings/d1-sqlite.ts';
+import { createAuth } from './auth/handler.ts';
 
 type FetchApp = { fetch: (request: Request, env?: unknown) => Response | Promise<Response> };
 
@@ -15,6 +16,8 @@ export type StartOptions = {
   app: FetchApp;
   dialect: Dialect;
   migrations: Migration[];
+  /** fga/model.fga from the app, bundled at build time; null when the app has none. */
+  fgaModel?: string | null;
   vars?: NodeJS.ProcessEnv;
 };
 
@@ -33,13 +36,24 @@ export function listenAddress(vars: NodeJS.ProcessEnv = process.env): { hostname
 
 export async function migrate(options: Omit<StartOptions, 'app'>): Promise<string[]> {
   const vars = options.vars ?? process.env;
-  if (options.dialect === 'postgresql') {
-    if (!vars.DATABASE_URL) throw new Error('openvoid: DATABASE_URL is required for a PostgreSQL app.');
-    return applyPgMigrations(vars.DATABASE_URL, options.migrations);
-  }
-  const env = createEnv({ dialect: 'sqlite', vars });
+  const env = createEnv({ dialect: options.dialect, vars });
   try {
-    return await applySqliteMigrations(env.DB as SqliteD1Database, options.migrations);
+    let applied: string[];
+    if (options.dialect === 'postgresql') {
+      if (!vars.DATABASE_URL) throw new Error('openvoid: DATABASE_URL is required for a PostgreSQL app.');
+      applied = await applyPgMigrations(vars.DATABASE_URL, options.migrations);
+    } else {
+      applied = await applySqliteMigrations(env.DB as SqliteD1Database, options.migrations);
+    }
+    // Identity tables (better-auth mode) and the OpenFGA model follow the app's own migrations.
+    const auth = await createAuth({ env, vars, dialect: options.dialect });
+    await auth.migrate();
+    await auth.close();
+    if (vars.OPENVOID_FGA_URL) {
+      const { migrateFga } = await import('./fga/index.ts');
+      await migrateFga(vars, options.fgaModel ?? null);
+    }
+    return applied;
   } finally {
     await closeEnv(env);
   }
@@ -82,11 +96,14 @@ export async function startServer(options: StartOptions): Promise<ServerType | u
   const env = createEnv({ dialect: options.dialect, vars });
   setGlobalEnv(env);
   warnAboutLocalStateOnLambda(options.dialect, vars);
+  const auth = await createAuth({ env, vars, dialect: options.dialect });
+  if (auth.enabled) console.log(`[openvoid] sign-in: ${auth.mode} under ${auth.basePath}`);
   const { hostname, port } = listenAddress(vars);
   const server = serve({
     hostname,
     port,
-    fetch: (request, nodeEnv) => runWithEnv(env, () => options.app.fetch(request, nodeEnv)),
+    fetch: (request, nodeEnv) =>
+      runWithEnv(env, () => auth.wrap(request, async () => options.app.fetch(request, nodeEnv))),
   });
   server.once('listening', () => console.log(`[openvoid] listening on http://${hostname}:${port}`));
 
@@ -97,7 +114,10 @@ export async function startServer(options: StartOptions): Promise<ServerType | u
     console.log(`[openvoid] ${signal}: closing`);
     // Lambda gives 1s after SIGTERM; stop accepting, then release files and connections.
     server.close();
-    void closeEnv(env).finally(() => process.exit(0));
+    void auth
+      .close()
+      .then(() => closeEnv(env))
+      .finally(() => process.exit(0));
     setTimeout(() => process.exit(0), 900).unref();
   };
   process.once('SIGTERM', () => stop('SIGTERM'));

@@ -5,7 +5,7 @@
 #   scripts/services.sh env    print the env vars only
 set -euo pipefail
 
-PREFIX=openvoid-test
+PREFIX=${OPENVOID_SERVICES_PREFIX:-openvoid-test}
 REDIS_PORT=${OPENVOID_REDIS_PORT:-56379}
 S3_PORT=${OPENVOID_S3_PORT:-58333}
 DYNAMO_PORT=${OPENVOID_DYNAMO_PORT:-58000}
@@ -20,6 +20,7 @@ export OPENVOID_TEST_DATABASE_URL=postgres://openvoid:openvoid@127.0.0.1:${PG_PO
 export AWS_ACCESS_KEY_ID=openvoid
 export AWS_SECRET_ACCESS_KEY=openvoid-secret
 export AWS_REGION=us-east-1
+export OPENVOID_SERVICES_PREFIX=${PREFIX}
 EOF
 }
 
