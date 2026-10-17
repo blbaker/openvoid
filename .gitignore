@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.data/
+.void/
+.wrangler/
+*.log
+*.zip
+.env
+.env.*
+!.env.example
+.void-wrangler.jsonc

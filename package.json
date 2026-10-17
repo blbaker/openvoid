@@ -1,0 +1,15 @@
+{
+  "name": "openvoid-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.2.2",
+  "engines": {
+    "node": ">=24.21.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @openvoid/node build",
+    "typecheck": "pnpm --filter @openvoid/node typecheck",
+    "test": "pnpm --filter @openvoid/node test",
+    "e2e": "bash scripts/e2e.sh"
+  }
+}
