@@ -30,6 +30,7 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/openvoid-e2e.XXXXXX")
 PIDS=()
 CONTAINERS=()
 COMPOSE_DIRS=()
+COMPOSE_PROJECTS=()
 RESULTS=()
 
 # Each scenario runs in its own subshell with `set -e`; this stops whatever it started.
@@ -37,6 +38,10 @@ stop_started() {
   for pid in "${PIDS[@]}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
   for c in "${CONTAINERS[@]}"; do docker rm -f "$c" >/dev/null 2>&1 || true; done
   for d in "${COMPOSE_DIRS[@]}"; do (cd "$d" && docker compose -f compose.full.yaml -p openvoid-e2e down -v >/dev/null 2>&1) || true; done
+  # Entries are "<compose file>|<project name>".
+  for entry in "${COMPOSE_PROJECTS[@]}"; do
+    docker compose -f "${entry%%|*}" -p "${entry##*|}" down -v >/dev/null 2>&1 || true
+  done
 }
 trap 'rm -rf "$WORK"' EXIT
 
