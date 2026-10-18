@@ -16,9 +16,9 @@ bash scripts/e2e.sh
 scripts/services.sh down
 ```
 
-`scripts/services.sh up` starts Redis, SeaweedFS (for S3), DynamoDB Local and PostgreSQL on
-loopback ports. Without it, `pnpm test` still runs the SQLite and filesystem backends and skips
-the rest.
+`scripts/services.sh up` starts Redis, SeaweedFS (for S3), DynamoDB Local, PostgreSQL and
+OpenFGA on loopback ports. Without it, `pnpm test` still runs the SQLite and filesystem
+backends and skips the rest.
 
 ## Layout
 
