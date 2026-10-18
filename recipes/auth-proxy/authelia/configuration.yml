@@ -1,0 +1,49 @@
+# Authelia forward-auth setup, for the recipe's dev/test use only. See ../README.md and
+# ./README.md before using any of this beyond that.
+server:
+  address: 'tcp://:9091'
+
+log:
+  level: 'info'
+
+identity_validation:
+  reset_password:
+    jwt_secret: 'openvoid-dev-reset-password-jwt-secret'
+
+authentication_backend:
+  file:
+    path: '/config/users_database.yml'
+
+# Everything is denied by default; only the app's domain is opened up, at one_factor (password
+# only, no second factor) to keep the dev/test login simple. auth.localtest.me itself isn't
+# listed here because Caddy sends it straight to Authelia's own portal, never through
+# forward_auth, so access_control's rules don't apply to it.
+access_control:
+  default_policy: 'deny'
+  rules:
+    - domain: 'app.localtest.me'
+      policy: 'one_factor'
+
+session:
+  secret: 'openvoid-dev-session-secret'
+  cookies:
+    # https is required here (Authelia 4.38+ refuses http); Caddy terminates TLS with its own
+    # internal CA (see ../authelia/Caddyfile), so this points at https even though nothing
+    # between Caddy and the containers behind it uses TLS.
+    - domain: 'localtest.me'
+      authelia_url: 'https://auth.localtest.me:3442/'
+      default_redirection_url: 'https://app.localtest.me:3442/'
+
+regulation:
+  max_retries: 3
+  find_time: '2 minutes'
+  ban_time: '5 minutes'
+
+storage:
+  encryption_key: 'openvoid-dev-storage-encryption-key-change-me'
+  local:
+    path: '/config/db.sqlite3'
+
+notifier:
+  filesystem:
+    filename: '/config/notification.txt'

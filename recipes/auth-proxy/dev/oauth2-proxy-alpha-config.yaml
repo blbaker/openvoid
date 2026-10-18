@@ -1,0 +1,52 @@
+# oauth2-proxy alpha configuration: https://oauth2-proxy.github.io/oauth2-proxy/configuration/alpha-config
+# Provider options, the bind address and header injection all have to live here once
+# --alpha-config is used; see oauth2-proxy.cfg next to this file for everything that is still
+# set the legacy way.
+server:
+  bindAddress: "0.0.0.0:4180"
+
+upstreamConfig:
+  upstreams:
+    - id: app
+      path: /
+      uri: http://app:3000
+
+# oauth2-proxy's own built-in "pass-user-headers" sends X-Forwarded-User/-Email/-Groups, but that
+# flag is removed once alpha config is used, so it's reproduced explicitly here, plus the shared
+# secret the app requires before it will believe any of it (see @openvoid/node/auth proxy mode).
+injectRequestHeaders:
+  - name: X-Forwarded-User
+    values:
+      - claimSource:
+          claim: user
+  - name: X-Forwarded-Email
+    values:
+      - claimSource:
+          claim: email
+  - name: X-Forwarded-Preferred-Username
+    values:
+      - claimSource:
+          claim: preferred_username
+  - name: X-Forwarded-Groups
+    values:
+      - claimSource:
+          claim: groups
+  - name: X-OpenVoid-Proxy-Secret
+    values:
+      - secretSource:
+          fromEnv: OPENVOID_AUTH_PROXY_SECRET
+
+# With Dex, the "user" claim oauth2-proxy puts in X-Forwarded-User turns out to be Dex's opaque
+# subject ID (base64 of a small protobuf, built from the static user's userID), not the email
+# or username. That becomes AuthUser.subject and AuthUser.id in @openvoid/node/auth; use
+# X-Forwarded-Email (also injected below) for anything that needs to be human-readable.
+providers:
+  - id: dex
+    provider: oidc
+    clientID: openvoid-oauth2-proxy
+    clientSecret: openvoid-dev-client-secret
+    # "groups" is requested for providers that can supply it (Keycloak, Authelia...). Dex's
+    # local password connector never populates it, so X-Forwarded-Groups stays empty here.
+    scope: "openid email profile groups"
+    oidcConfig:
+      issuerURL: http://dex.localtest.me:3441/dex

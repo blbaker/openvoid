@@ -1,0 +1,53 @@
+# oauth2-proxy in front of the app, signing people in through Dex (an OpenID Connect provider).
+# Copy this file, recipes/docker/Dockerfile and the dev/ folder into your app's root, run
+# `npm run build`, set a real OPENVOID_AUTH_PROXY_SECRET, then:
+#   docker compose -f compose.oauth2-proxy.yaml up -d --build
+#   open http://localhost:3440
+#
+# See dev/dex-config.yaml for why dex.localtest.me is used as the issuer hostname and why its
+# port has to match the published one. Swap the dex service for your real OIDC provider and
+# dev/oauth2-proxy-alpha-config.yaml's providers block for its issuer URL in production; nothing
+# else here needs to change.
+services:
+  app:
+    build: .
+    environment:
+      OPENVOID_AUTH: proxy
+      OPENVOID_AUTH_PROXY_PRESET: oauth2-proxy
+      OPENVOID_AUTH_PROXY_SECRET: ${OPENVOID_AUTH_PROXY_SECRET:-change-me-in-production}
+    # No ports: published on purpose. oauth2-proxy is the only thing that can reach this
+    # container; anything else on the network could otherwise send it forged identity headers.
+    restart: unless-stopped
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+    command: --config /etc/oauth2-proxy/oauth2-proxy.cfg --alpha-config /etc/oauth2-proxy/alpha-config.yaml
+    environment:
+      # Read by dev/oauth2-proxy-alpha-config.yaml's injectRequestHeaders (secretSource.fromEnv),
+      # so the secret itself never has to be written into that file.
+      OPENVOID_AUTH_PROXY_SECRET: ${OPENVOID_AUTH_PROXY_SECRET:-change-me-in-production}
+    volumes:
+      - ./dev/oauth2-proxy.cfg:/etc/oauth2-proxy/oauth2-proxy.cfg:ro
+      - ./dev/oauth2-proxy-alpha-config.yaml:/etc/oauth2-proxy/alpha-config.yaml:ro
+    ports:
+      - "127.0.0.1:3440:4180"
+    depends_on:
+      - app
+      - dex
+    restart: unless-stopped
+
+  dex:
+    image: ghcr.io/dexidp/dex:v2.45.1
+    command: dex serve /etc/dex/config.yaml
+    volumes:
+      - ./dev/dex-config.yaml:/etc/dex/config.yaml:ro
+    ports:
+      - "127.0.0.1:3441:3441"
+    networks:
+      default:
+        aliases:
+          - dex.localtest.me
+    restart: unless-stopped
+
+networks:
+  default: {}
