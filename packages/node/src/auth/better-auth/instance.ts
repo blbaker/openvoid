@@ -1,10 +1,23 @@
 // Builds the Better Auth configuration: database, email+password, Google/GitHub social sign-in,
 // any number of OIDC providers through Better Auth's genericOAuth plugin, and the groups field.
 import type { BetterAuthOptions } from 'better-auth';
+import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { genericOAuth, type GenericOAuthUserInfo } from 'better-auth/plugins/generic-oauth';
 import type { AuthModeContext } from '../types.ts';
 import type { BetterAuthModeConfig } from './env.ts';
 import { loadAuthUser, normalizeGroupsClaim, type AccountRow, type UserRow } from './user.ts';
+
+/**
+ * Groups come only from an identity provider. The field has to accept input (Better Auth drops
+ * provider-mapped fields marked `input: false`), so any request that tries to set it directly
+ * (sign-up, update-user) is refused here instead.
+ */
+const rejectClientGroups = createAuthMiddleware(async (ctx) => {
+  const body: unknown = ctx.body;
+  if (body && typeof body === 'object' && 'groups' in body) {
+    throw new APIError('BAD_REQUEST', { message: 'groups is set by the identity provider, not by the client' });
+  }
+});
 
 /**
  * Builds the BetterAuthOptions for this app. `database` is whatever createDatabaseBinding()
@@ -27,6 +40,10 @@ export function buildBetterAuthOptions(ctx: AuthModeContext, cfg: BetterAuthMode
               clientId: provider.clientId,
               clientSecret: provider.clientSecret,
               scopes: provider.scopes,
+              // The provider is the source of truth: rewrite name, email, image and groups on
+              // every sign-in, so removing someone from a group at the provider takes effect
+              // here on their next sign-in instead of never.
+              overrideUserInfo: true,
               mapProfileToUser: (profile: GenericOAuthUserInfo) => ({
                 groups: JSON.stringify(normalizeGroupsClaim(profile[provider.groupsClaim])),
               }),
@@ -43,6 +60,7 @@ export function buildBetterAuthOptions(ctx: AuthModeContext, cfg: BetterAuthMode
     emailAndPassword: { enabled: cfg.emailAndPassword },
     socialProviders,
     plugins,
+    hooks: { before: rejectClientGroups },
     advanced: {
       // OpenVoid always runs mode.migrate() before serving traffic (server start, dev server,
       // the `migrate` command); Better Auth's own at-construction schema check would otherwise
@@ -52,9 +70,8 @@ export function buildBetterAuthOptions(ctx: AuthModeContext, cfg: BetterAuthMode
     user: {
       additionalFields: {
         // JSON-encoded string[], not a native array: keeps one shape on SQLite and PostgreSQL.
-        // Not part of sign-up input (so a client can't set its own groups); OIDC sign-in sets
-        // it through mapProfileToUser above, email+password users keep the default "[]".
-        groups: { type: 'string', required: false, input: false, defaultValue: '[]' },
+        // OIDC sign-in fills it through mapProfileToUser above; everyone else keeps "[]".
+        groups: { type: 'string', required: false, defaultValue: '[]' },
       },
     },
     databaseHooks: {

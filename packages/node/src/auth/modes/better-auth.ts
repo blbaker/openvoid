@@ -28,12 +28,21 @@ export async function createMode(ctx: AuthModeContext): Promise<AuthMode> {
   const auth = betterAuth(options);
   const basePath = ctx.basePath;
 
-  async function startSignIn(provider: string, returnTo: string): Promise<Response> {
-    const result = await auth.api.signInSocial({ body: { provider, callbackURL: returnTo } });
-    if (!result?.url) {
+  async function startSignIn(request: Request, provider: string, returnTo: string): Promise<Response> {
+    // returnHeaders: Better Auth sets a signed state cookie here and checks it on the callback,
+    // so its Set-Cookie headers must ride along on our redirect or every callback fails with
+    // state_mismatch.
+    const { headers, response } = await auth.api.signInSocial({
+      body: { provider, callbackURL: returnTo },
+      headers: request.headers,
+      returnHeaders: true,
+    });
+    if (!response?.url) {
       return Response.json({ error: `openvoid: could not start sign-in for provider "${provider}".` }, { status: 400 });
     }
-    return Response.redirect(result.url, 302);
+    const redirect = new Headers({ location: response.url, 'cache-control': 'no-store' });
+    for (const cookie of headers.getSetCookie()) redirect.append('set-cookie', cookie);
+    return new Response(null, { status: 302, headers: redirect });
   }
 
   return {
@@ -47,7 +56,7 @@ export async function createMode(ctx: AuthModeContext): Promise<AuthMode> {
       if (url.pathname.startsWith(`${basePath}/login/`)) {
         const provider = decodeURIComponent(url.pathname.slice(`${basePath}/login/`.length));
         if (!provider) return null;
-        return startSignIn(provider, safeReturnTo(url.searchParams.get('returnTo')));
+        return startSignIn(request, provider, safeReturnTo(url.searchParams.get('returnTo')));
       }
       if (url.pathname === `${basePath}/login`) {
         return Response.json(
