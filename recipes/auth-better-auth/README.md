@@ -59,7 +59,7 @@ Better Auth's other endpoints (`/auth/change-password`, `/auth/update-user`,
 email sender, so password reset (`/auth/request-password-reset`) and email verification don't
 work. A user who forgets their password needs an admin, or a social or OIDC account linked to
 the same email. `defineHandler` routes in the app use `requireAuth()`, `getUser()` and
-`getSession()` from `@openvoid/node/auth` exactly like the other modes; see
+`getSession()` from `@blbaker/openvoid/auth` exactly like the other modes; see
 [docs/identity.md](../../docs/identity.md).
 
 ## Using Better Auth's browser client

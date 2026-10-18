@@ -4,7 +4,7 @@
 //   migrateFga(vars, modelSource)   creates the store and writes fga/model.fga; runs with `migrate`
 //   onSignIn(user, vars)            mirrors groups into OpenFGA when OPENVOID_FGA_SYNC_GROUPS=1
 //   check / requirePermission / listObjects / grant / revoke / writeTuples / deleteTuples / fgaUser
-//                                   the runtime API routes import from `@openvoid/node/fga`
+//                                   the runtime API routes import from `@blbaker/openvoid/fga`
 export { migrateFga } from './model.ts';
 export { onSignIn } from './sync.ts';
 export { fgaUser } from './user.ts';

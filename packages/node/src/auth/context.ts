@@ -1,4 +1,4 @@
-// What app code imports: `import { getUser, requireAuth } from '@openvoid/node/auth'`.
+// What app code imports: `import { getUser, requireAuth } from '@blbaker/openvoid/auth'`.
 // The names mirror Void's own `void/auth` (which Void refuses to build outside Cloudflare).
 // The store lives on globalThis under a registered symbol so the bundled server and the dev
 // server's module runner share one copy.

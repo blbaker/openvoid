@@ -27,7 +27,7 @@ Add OpenVoid in front of Void's plugin in `vite.config.ts`:
 ```ts
 import { defineConfig } from 'vite';
 import { voidPlugin } from 'void';
-import { openvoid } from '@openvoid/node';
+import { openvoid } from '@blbaker/openvoid';
 
 export default defineConfig({
   plugins: [openvoid(), voidPlugin()],
@@ -48,7 +48,7 @@ node dist/ssr/index.js
 With no configuration, data goes to `./.data`: SQLite for `void/db` and `void/kv`, files for
 `void/storage`. Pending migrations from `db/migrations` run before the server starts listening.
 
-`@openvoid/node` is not on npm yet. Until it is, use this repo as a workspace (see
+`@blbaker/openvoid` is not on npm yet. Until it is, use this repo as a workspace (see
 `examples/`) or install it from a local checkout.
 
 ## Recipes
@@ -115,7 +115,7 @@ Works on Node.js with OpenVoid:
 - `void/storage`: put, get with byte ranges, head, delete, list with prefix, delimiter and
   cursor, http and custom metadata
 - `void/env`, including an `env.ts` schema with defaults
-- Sign-in, through `@openvoid/node/auth` instead of `void/auth`: `requireAuth`, `getUser` and
+- Sign-in, through `@blbaker/openvoid/auth` instead of `void/auth`: `requireAuth`, `getUser` and
   `getSession` with the same names, backed by a login proxy, OpenID Connect or Better Auth.
   Permissions through OpenFGA. See [identity](docs/identity.md).
 - `vite dev` with the same backends as the built server
@@ -126,7 +126,7 @@ routes, so pages and SSG have not been tested with OpenVoid yet.
 Not supported yet:
 
 - `void/auth` itself and `auth` from `void/client`. Void stops the build when a Node app imports
-  them, before any plugin runs. Import from `@openvoid/node/auth` instead; for a browser client,
+  them, before any plugin runs. Import from `@blbaker/openvoid/auth` instead; for a browser client,
   the Better Auth recipe shows Better Auth's own.
 - `void/ai`, `void/sandbox`, queues, cron triggers, Durable Objects, `void/live` and WebSocket
   routes. These stay Cloudflare-only for now.

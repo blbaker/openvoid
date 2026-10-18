@@ -5,8 +5,8 @@
 // routes/api/docs/[id]/share.ts).
 import { defineHandler } from 'void';
 import { kv } from 'void/kv';
-import { requireAuth } from '@openvoid/node/auth';
-import { grant, requirePermission } from '@openvoid/node/fga';
+import { requireAuth } from '@blbaker/openvoid/auth';
+import { grant, requirePermission } from '@blbaker/openvoid/fga';
 import { syncSignedInGroups } from './_fga.ts';
 
 type Doc = { id: string; body: string; updatedAt: number };

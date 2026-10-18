@@ -13,7 +13,7 @@ upstreamConfig:
 
 # oauth2-proxy's own built-in "pass-user-headers" sends X-Forwarded-User/-Email/-Groups, but that
 # flag is removed once alpha config is used, so it's reproduced explicitly here, plus the shared
-# secret the app requires before it will believe any of it (see @openvoid/node/auth proxy mode).
+# secret the app requires before it will believe any of it (see @blbaker/openvoid/auth proxy mode).
 injectRequestHeaders:
   - name: X-Forwarded-User
     values:
@@ -38,7 +38,7 @@ injectRequestHeaders:
 
 # With Dex, the "user" claim oauth2-proxy puts in X-Forwarded-User turns out to be Dex's opaque
 # subject ID (base64 of a small protobuf, built from the static user's userID), not the email
-# or username. That becomes AuthUser.subject and AuthUser.id in @openvoid/node/auth; use
+# or username. That becomes AuthUser.subject and AuthUser.id in @blbaker/openvoid/auth; use
 # X-Forwarded-Email (also injected below) for anything that needs to be human-readable.
 providers:
   - id: dex

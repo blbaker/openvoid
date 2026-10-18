@@ -75,8 +75,8 @@ smoke() {
 }
 
 build_examples() {
-  log "build @openvoid/node and the examples"
-  (cd "$ROOT" && pnpm --filter @openvoid/node build >/dev/null)
+  log "build @blbaker/openvoid and the examples"
+  (cd "$ROOT" && pnpm --filter @blbaker/openvoid build >/dev/null)
   (cd "$ROOT" && pnpm --filter openvoid-example-notes run build >/dev/null)
   (cd "$ROOT" && pnpm --filter openvoid-example-notes-pg run build >/dev/null)
 }

@@ -7,9 +7,9 @@
     "node": ">=24.21.0"
   },
   "scripts": {
-    "build": "pnpm --filter @openvoid/node build",
-    "typecheck": "pnpm --filter @openvoid/node typecheck",
-    "test": "pnpm --filter @openvoid/node test",
+    "build": "pnpm --filter @blbaker/openvoid build",
+    "typecheck": "pnpm --filter @blbaker/openvoid typecheck",
+    "test": "pnpm --filter @blbaker/openvoid test",
     "e2e": "bash scripts/e2e.sh"
   }
 }

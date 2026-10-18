@@ -1,6 +1,6 @@
 // Share a doc with everyone in a group: only the owner can do this.
 import { defineHandler } from 'void';
-import { requirePermission, writeTuples } from '@openvoid/node/fga';
+import { requirePermission, writeTuples } from '@blbaker/openvoid/fga';
 import { syncSignedInGroups } from '../_fga.ts';
 
 export const POST = defineHandler(async (c) => {

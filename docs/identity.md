@@ -5,7 +5,7 @@ the build when any file imports them on a Node target. OpenVoid provides sign-in
 import path with the same function names, so moving an app over means changing one import.
 
 ```ts
-import { requireAuth, getUser, getSession } from '@openvoid/node/auth';
+import { requireAuth, getUser, getSession } from '@blbaker/openvoid/auth';
 
 export const GET = defineHandler(() => {
   const user = requireAuth(); // 401 when nobody is signed in

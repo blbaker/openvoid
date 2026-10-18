@@ -10,4 +10,4 @@ labels: bug
 
 **How to reproduce** (a route or snippet, plus the OpenVoid env vars you set)
 
-**Versions**: `void`, `@openvoid/node`, Node.js, backend (SQLite, PostgreSQL, Redis, DynamoDB, S3 service)
+**Versions**: `void`, `@blbaker/openvoid`, Node.js, backend (SQLite, PostgreSQL, Redis, DynamoDB, S3 service)
