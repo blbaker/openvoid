@@ -188,6 +188,11 @@ The `fga-migrate` service runs `openfga migrate` and exits; `fga` waits for it
 (`condition: service_completed_successfully`) before starting, the same pattern
 `recipes/docker/compose.full.yaml` uses for the app's own migrations.
 
+Both services use the same pinned image, `openfga/openfga:v1.22.0`, the version OpenVoid's tests
+run against. `openfga migrate` writes the schema that `openfga run` expects, so upgrade them
+together: change both `image:` lines, then `docker compose up -d` runs the new version's
+migration before the server starts.
+
 ```sh
 cp recipes/authz-openfga/compose.yaml .
 docker compose -f compose.yaml up -d
@@ -212,7 +217,7 @@ FGA_PRESHARED_KEY=$(openssl rand -hex 32) docker compose -f compose.yaml up -d
 To run OpenFGA directly instead of through Compose:
 
 ```sh
-docker run -p 8080:8080 -p 8081:8081 -p 3000:3000 openfga/openfga run
+docker run -p 8080:8080 -p 8081:8081 -p 3000:3000 openfga/openfga:v1.22.0 run
 ```
 
 Port 8080 serves the HTTP API OpenVoid talks to, 8081 the gRPC API (unused here), and 3000 the
@@ -272,9 +277,10 @@ over HTTP: alice creates a doc and reads it back, bob is denied with no relation
 anonymous is denied outright, alice shares the doc with group `family`, bob (sent with a
 `family` groups header) can then read it, and still cannot write it.
 
-Checked by hand, not by the automated suite: `compose.yaml` (brought up with
-`docker compose up -d`, confirmed PostgreSQL reports healthy, `fga-migrate` completes and logs
-`migration done`, and `/healthz` on the `fga` service returns `{"status":"SERVING"}`), and
+Checked by hand, not by the automated suite: `compose.yaml` with `openfga/openfga:v1.22.0`
+(brought up with `docker compose up -d`, confirmed PostgreSQL reports healthy, `fga-migrate`
+completes and logs `migration done`, `/healthz` on the `fga` service returns
+`{"status":"SERVING"}`, and `fga.test.ts` passes against it on the PostgreSQL datastore), and
 pre-shared key authentication (`OPENVOID_FGA_API_TOKEN` against a container started with
 `--authn-method=preshared`: `migrateFga`, `grant` and `check` all worked through it, and a
 request with no or the wrong token got a 401 from OpenFGA itself). Okta FGA (client credentials)
