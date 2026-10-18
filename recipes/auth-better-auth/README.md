@@ -24,6 +24,8 @@ change, not a code change.
 | `OPENVOID_PUBLIC_URL` | | Required. The app's public origin, e.g. `https://notes.example.com`. Better Auth's `baseURL`; also where OAuth providers redirect back to. |
 | `BETTER_AUTH_SECRET` | | Required. Signs and encrypts sessions and OAuth state. Generate with `openssl rand -base64 32`. Changing it signs everyone out. |
 | `OPENVOID_AUTH_PATH` | `/auth` | URL prefix for every endpoint below (shared by all modes). |
+| `OPENVOID_AUTH_SESSION_DAYS` | `30` | Session lifetime (shared by all modes). |
+| `OPENVOID_AUTH_SECURE_COOKIES` | auto | `1` always sets `Secure` on Better Auth's cookies, `0` never. Auto follows the scheme of `OPENVOID_PUBLIC_URL`. |
 | `OPENVOID_AUTH_EMAIL_PASSWORD` | `1` | Set to `0` to turn off email and password sign-up and sign-in, keeping only social/OIDC. |
 | `OPENVOID_AUTH_GOOGLE_CLIENT_ID`, `OPENVOID_AUTH_GOOGLE_CLIENT_SECRET` | | Enables Google sign-in. Both or neither. |
 | `OPENVOID_AUTH_GITHUB_CLIENT_ID`, `OPENVOID_AUTH_GITHUB_CLIENT_SECRET` | | Enables GitHub sign-in. Both or neither. |
@@ -114,6 +116,12 @@ Social and OIDC sign-in can also be started with a plain link, no JavaScript nee
 Groups from the configured claim land in `AuthUser.groups`. Email and password users always get
 `groups: []`; there is no concept of groups without an external provider.
 
+The OIDC provider is treated as the source of truth: on every sign-in, OpenVoid rewrites the
+user's name, email, image and groups from what the provider sends. Removing someone from a
+group at the provider takes effect the next time they sign in. Until then their current session
+keeps the old groups, so keep `OPENVOID_AUTH_SESSION_DAYS` short if that gap matters. This
+applies to OIDC providers only. Google and GitHub accounts keep whatever the user set locally.
+
 ## Database tables and migrations
 
 Better Auth adds its own tables (`user`, `session`, `account`, `verification`) to the app's
@@ -124,9 +132,9 @@ every mode's tables get created: on `node dist/ssr/index.js migrate`, on normal 
 (`OPENVOID_MIGRATE=on-start`, the default), and in the Vite dev server. Running it again is a
 no-op.
 
-The `user` table carries one extra column, `groups`, a JSON-encoded array of group names. It is
-not settable through the sign-up API; OIDC sign-in fills it from the configured groups claim,
-everyone else gets `[]`.
+The `user` table carries one extra column, `groups`, a JSON-encoded array of group names. Only
+an OIDC sign-in writes it. A request that tries to set `groups` itself (`/auth/sign-up/email`,
+`/auth/update-user`) is refused with a 400, so users cannot give themselves groups.
 
 ### Where accounts live
 
@@ -150,28 +158,41 @@ changes. `AuthUser.subject` is that same id without the provider prefix.
   turned off with `OPENVOID_AUTH_EMAIL_PASSWORD=0`, a misconfigured setup (missing
   `OPENVOID_PUBLIC_URL`/`BETTER_AUTH_SECRET`, a lone Google client id) throwing a clear error,
   `GET /auth/login/google` redirecting to Google's real authorization endpoint with the right
-  `client_id` and `redirect_uri` (no network call needed, since Google's endpoints are static),
-  and `ctx.hooks.onSignIn` firing once per new session. The same flow runs again on PostgreSQL
-  when `OPENVOID_TEST_DATABASE_URL` is set, each run in its own schema.
+  `client_id` and `redirect_uri`, and `ctx.hooks.onSignIn` firing once per new session. The
+  same flow runs again on PostgreSQL when `OPENVOID_TEST_DATABASE_URL` is set, each run in its
+  own schema.
+- OIDC unit tests (`auth-better-auth-oidc.test.ts`): a fake OIDC provider inside the test
+  process (discovery, JWKS, RS256-signed ID tokens), driven the way a browser would. Covers a
+  full sign-in through the callback, the groups claim mapped into `AuthUser.groups`, groups
+  refreshed on the next sign-in after the provider removes one, a callback without the state
+  cookie being refused, and `groups` in a sign-up or update-user body being refused. No Docker
+  needed.
+- Session settings (`auth-better-auth-cookies.test.ts`): the session cookie from a real sign-up
+  has `Max-Age` from `OPENVOID_AUTH_SESSION_DAYS` (30 days by default). `Secure` follows
+  `OPENVOID_PUBLIC_URL`, or is forced with `OPENVOID_AUTH_SECURE_COOKIES`.
 - End-to-end (`scripts/e2e.sh betterauth`): the built `notes` example run as a plain Node
   process with `OPENVOID_AUTH=better-auth`, driven over real HTTP with `curl` and a cookie jar:
   sign-up, `/api/me` showing the signed-in user, a social sign-in redirect, sign-out, and
-  `/api/me` back to 401. The full Void smoke test (`scripts/smoke.mjs`) runs alongside it. The
-  same flow also runs against `notes-pg` on PostgreSQL when `scripts/services.sh up` has been
-  run first; otherwise that half is skipped with a clear message, not a failure.
+  `/api/me` back to 401, with the full Void smoke test (`scripts/smoke.mjs`) alongside.
+  - OIDC against a real provider: [Dex](https://dexidp.io) (`ghcr.io/dexidp/dex:v2.45.1`) in a
+    container with its mock connector. `curl -L` follows the whole authorization-code flow
+    (discovery, PKCE, nonce, token exchange, ID token verification). It lands on `returnTo`
+    with a `dex:<subject>` user whose groups come from Dex's `groups` claim. Signing in again
+    keeps the same id. This leg is skipped with a message if the Dex image can't be pulled.
+  - PostgreSQL: the same email+password flow against `notes-pg` when `scripts/services.sh up`
+    has been run first. Otherwise this leg is skipped with a message, not a failure.
 - The production build was checked to bundle `better-auth` and its dependencies into
   `dist/ssr/index.js`: the only bare import left in the bundle is `@hono/node-server`, the same
   as every other mode.
 
 ### Not tested
 
-- A real OIDC provider (Authelia, Keycloak, Zitadel) end to end, including the groups claim.
-  The redirect to a configured provider and the Better Auth wiring around `genericOAuth` are
-  covered, but no test here drives an actual login form at a running identity provider. If you
-  stand one up, `GET /auth/login/<name>` should redirect to its authorization endpoint the same
-  way the Google test does.
-- Real Google and GitHub OAuth apps (client credentials, consent screen, token exchange). Only
-  the redirect construction is covered, with fake credentials.
+- Authelia, Keycloak and Zitadel specifically. Dex and the in-process provider exercise the
+  standard OIDC flow these share. What differs per provider is which scope and claim carry
+  groups; check `_SCOPES` and `_GROUPS_CLAIM` against your provider's docs.
+- Real Google and GitHub OAuth apps (client credentials, consent screen, token exchange). The
+  redirect and the state cookie are covered with fake credentials. The token exchange runs
+  through the same Better Auth callback that the OIDC tests exercise.
 - The `/auth/session` cookie-cache option, rate limiting, and the rest of Better Auth's optional
   features; none of them are configured by this mode.
 - Resolving `AuthUser` for a session does one extra query (the user's linked accounts) to work
