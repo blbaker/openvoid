@@ -90,7 +90,7 @@ function requireConfigured(vars: Vars, caller: string): void {
   if (!vars.OPENVOID_FGA_URL) throw new Error(`openvoid: ${caller} needs OPENVOID_FGA_URL to be set.`);
 }
 
-/** Used by check/listObjects/grant/revoke/onSignIn. Throws a clear error if no store exists yet. */
+/** The cached client and store for these settings. Throws a clear error if no store exists yet. */
 export function fgaContext(vars: Vars): Promise<FgaContext> {
   requireConfigured(vars, 'fga');
   const key = configKey(vars);
@@ -102,7 +102,7 @@ export function fgaContext(vars: Vars): Promise<FgaContext> {
   return ctx;
 }
 
-/** Used by migrateFga: creates the store if missing, and refreshes the cache other calls share. */
+/** Like fgaContext, but creates the store if it is missing and refreshes the shared cache. */
 export async function fgaMigrateContext(vars: Vars): Promise<FgaContext> {
   requireConfigured(vars, 'migrateFga');
   const ctx = await buildContext(vars, true);

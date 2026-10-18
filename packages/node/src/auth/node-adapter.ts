@@ -28,7 +28,8 @@ async function writeResponse(res: ServerResponse, response: Response): Promise<v
   });
   if (cookies.length > 0) res.setHeader('set-cookie', cookies);
   if (response.body) {
-    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) res.write(chunk);
+    const reader = response.body.getReader();
+    for (let read = await reader.read(); !read.done; read = await reader.read()) res.write(read.value);
   }
   res.end();
 }
