@@ -2,8 +2,8 @@
 
 `OPENVOID_AUTH=better-auth` signs people in with Better Auth: email and password, plus Google,
 GitHub, or any OpenID Connect provider through Better Auth's `genericOAuth` plugin. Accounts and
-sessions live in the app's own database (the same SQLite file or PostgreSQL database `void/db`
-uses), not at a separate identity provider.
+sessions live in the app's own database, the same SQLite file or PostgreSQL database `void/db`
+uses.
 
 ## When to pick this over oidc or proxy
 
@@ -13,8 +13,8 @@ want self-service account creation without standing up a separate identity provi
 (Authelia, Keycloak, Zitadel, Google Workspace, Entra) and the app should never hold a password.
 Pick [`proxy`](../auth-proxy) when a login proxy in front of the app (oauth2-proxy, Authelia
 forward-auth) already decided who the user is before the request reaches OpenVoid. All three
-produce the same `AuthUser` shape; moving between them later is mostly an environment-variable
-change, not a code change.
+produce the same `AuthUser`, so switching modes later mostly means changing environment
+variables.
 
 ## Environment variables
 
@@ -53,9 +53,12 @@ All under `OPENVOID_AUTH_PATH` (default `/auth`):
 | `/auth/callback/<provider>` | GET | Where the provider redirects back to. Better Auth handles this; nothing to configure. |
 | `/auth/logout` | POST | Signs out and clears the session cookie. |
 
-Every other Better Auth endpoint (`/auth/forget-password`, `/auth/update-user`, ...) is also
-reachable under `OPENVOID_AUTH_PATH`; see [Better Auth's docs](https://www.better-auth.com/docs)
-for the full list. `defineHandler` routes in the app use `requireAuth()`, `getUser()` and
+Better Auth's other endpoints (`/auth/change-password`, `/auth/update-user`,
+`/auth/list-sessions`, ...) are reachable under `OPENVOID_AUTH_PATH` too; see
+[Better Auth's docs](https://www.better-auth.com/docs) for the full list. This mode configures no
+email sender, so password reset (`/auth/request-password-reset`) and email verification don't
+work. A user who forgets their password needs an admin, or a social or OIDC account linked to
+the same email. `defineHandler` routes in the app use `requireAuth()`, `getUser()` and
 `getSession()` from `@openvoid/node/auth` exactly like the other modes; see
 [docs/identity.md](../../docs/identity.md).
 
@@ -107,14 +110,14 @@ Social and OIDC sign-in can also be started with a plain link, no JavaScript nee
 1. Register a confidential OAuth/OIDC client at the provider.
 2. Redirect URI: `${OPENVOID_PUBLIC_URL}/auth/callback/<name>`, where `<name>` is whatever you
    put in `OPENVOID_AUTH_OIDC_PROVIDERS`.
-3. Request at least the `openid`, `profile` and `email` scopes, plus whatever scope the
-   provider needs to return a groups claim (Authelia and Keycloak return `groups` with the
-   `groups` scope included; check `OPENVOID_AUTH_OIDC_<NAME>_SCOPES` against the provider's
-   docs if groups show up empty).
+3. Request at least the `openid`, `profile` and `email` scopes, plus whatever makes the
+   provider send groups. Dex and Authelia use a `groups` scope; others need a claim mapper on
+   the client. If groups come back empty, check `OPENVOID_AUTH_OIDC_<NAME>_SCOPES` and
+   `_GROUPS_CLAIM` against the provider's docs.
 4. Set `OPENVOID_AUTH_OIDC_<NAME>_ISSUER`, `_CLIENT_ID` and `_CLIENT_SECRET`.
 
-Groups from the configured claim land in `AuthUser.groups`. Email and password users always get
-`groups: []`; there is no concept of groups without an external provider.
+Groups from the configured claim land in `AuthUser.groups`. Email and password users get
+`groups: []`.
 
 The OIDC provider is treated as the source of truth: on every sign-in, OpenVoid rewrites the
 user's name, email, image and groups from what the provider sends. Removing someone from a
@@ -180,7 +183,7 @@ changes. `AuthUser.subject` is that same id without the provider prefix.
     with a `dex:<subject>` user whose groups come from Dex's `groups` claim. Signing in again
     keeps the same id. This leg is skipped with a message if the Dex image can't be pulled.
   - PostgreSQL: the same email+password flow against `notes-pg` when `scripts/services.sh up`
-    has been run first. Otherwise this leg is skipped with a message, not a failure.
+    has been run first. Without it this leg is skipped with a message and the run still passes.
 - The production build was checked to bundle `better-auth` and its dependencies into
   `dist/ssr/index.js`: the only bare import left in the bundle is `@hono/node-server`, the same
   as every other mode.
@@ -193,8 +196,8 @@ changes. `AuthUser.subject` is that same id without the provider prefix.
 - Real Google and GitHub OAuth apps (client credentials, consent screen, token exchange). The
   redirect and the state cookie are covered with fake credentials. The token exchange runs
   through the same Better Auth callback that the OIDC tests exercise.
-- The `/auth/session` cookie-cache option, rate limiting, and the rest of Better Auth's optional
-  features; none of them are configured by this mode.
+- Better Auth's session cookie cache, rate limiting, and its other optional features. This mode
+  turns none of them on.
 - Resolving `AuthUser` for a session does one extra query (the user's linked accounts) to work
   out the id scheme above. For a very high-traffic app this is worth caching; it was not
   measured here.
