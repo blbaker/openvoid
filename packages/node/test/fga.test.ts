@@ -1,8 +1,9 @@
 // OpenFGA-backed behaviour. Skipped unless OPENVOID_TEST_FGA_URL is set. Follows the pattern of
 // test/kv.conformance.test.ts: the backend is started out of band and its address handed in.
+// `scripts/services.sh up` starts it (openfga/openfga:v1.22.0) and `scripts/services.sh env`
+// exports the URL:
 //
-//   docker run -d --name openvoid-fga-test -p 127.0.0.1:46280:8080 openfga/openfga run
-//   cd packages/node && OPENVOID_TEST_FGA_URL=http://127.0.0.1:46280 node --no-warnings --test 'test/**/*.test.ts'
+//   scripts/services.sh up && eval "$(scripts/services.sh env)" && pnpm test
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { OpenFgaClient } from '@openfga/sdk';
