@@ -1,0 +1,54 @@
+# OpenFGA with its own PostgreSQL datastore. Standalone use:
+#   docker compose -f compose.yaml up -d
+#   curl http://localhost:8080/healthz
+# Then point an OpenVoid app at it: OPENVOID_FGA_URL=http://localhost:8080
+#
+# To fold this into an app's own compose file (see recipes/docker/compose.full.yaml), copy the
+# three services below in and add OPENVOID_FGA_URL=http://fga:8080 to the app service's
+# environment.
+services:
+  fga-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: openfga
+      POSTGRES_PASSWORD: ${FGA_POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: openfga
+    volumes:
+      - fga-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openfga -d openfga"]
+      interval: 2s
+      retries: 30
+
+  # Creates/updates OpenFGA's own tables, then exits. The `fga` service waits for this to finish.
+  fga-migrate:
+    image: openfga/openfga:latest
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://openfga:${FGA_POSTGRES_PASSWORD:-change-me}@fga-postgres:5432/openfga?sslmode=disable
+    depends_on:
+      fga-postgres:
+        condition: service_healthy
+
+  fga:
+    image: openfga/openfga:latest
+    command: run
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://openfga:${FGA_POSTGRES_PASSWORD:-change-me}@fga-postgres:5432/openfga?sslmode=disable
+      OPENFGA_LOG_FORMAT: json
+      # Pre-shared key auth protects OpenFGA's own API. Set FGA_PRESHARED_KEY to a long random
+      # value and pass the same value to your app as OPENVOID_FGA_API_TOKEN. Without this,
+      # anyone who can reach this port can read and write every tuple in every store: fine on a
+      # private network you already trust, not otherwise.
+      OPENFGA_AUTHN_METHOD: ${FGA_AUTHN_METHOD:-none}
+      OPENFGA_AUTHN_PRESHARED_KEYS: ${FGA_PRESHARED_KEY:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      fga-migrate:
+        condition: service_completed_successfully
+
+volumes:
+  fga-postgres-data:

@@ -62,6 +62,16 @@ to, the files you copy, and the commands you run.
   form factor that runs a normal HTTP server. PostgreSQL, DynamoDB and S3
 - [Plain Node.js](recipes/node): a VM or bare server with systemd
 
+Sign-in and permissions, for any of the platforms above (see [identity](docs/identity.md)):
+
+- [Login proxy](recipes/auth-proxy): oauth2-proxy or Authelia in front of the app signs people
+  in and passes who they are in headers
+- [OIDC and GitHub](recipes/auth-oidc): OpenVoid signs people in itself through any OpenID
+  Connect provider, plus GitHub
+- [Better Auth](recipes/auth-better-auth): email and password, Google, GitHub or any OIDC
+  provider, with accounts in the app's own database
+- [OpenFGA](recipes/authz-openfga): relationship-based permissions on top of any sign-in mode
+
 Each recipe is exercised by `scripts/e2e.sh`. The [recipes index](recipes/README.md) says
 exactly what was tested and what was not.
 
@@ -83,7 +93,8 @@ Everything is set with environment variables, so the same build runs anywhere.
 | `HOST`, `PORT` | `0.0.0.0`, `3000` | Listen address. `AWS_LAMBDA_HTTP_ENDPOINT` wins when Lambda sets it. |
 
 AWS credentials and region come from the standard AWS SDK chain: environment variables, a
-profile, or an IAM role.
+profile, or an IAM role. Sign-in settings (`OPENVOID_AUTH` and the rest) are in
+[identity](docs/identity.md) and each sign-in recipe.
 
 To apply migrations without starting the server, for example from CI before a deploy:
 
@@ -104,6 +115,9 @@ Works on Node.js with OpenVoid:
 - `void/storage`: put, get with byte ranges, head, delete, list with prefix, delimiter and
   cursor, http and custom metadata
 - `void/env`, including an `env.ts` schema with defaults
+- Sign-in, through `@openvoid/node/auth` instead of `void/auth`: `requireAuth`, `getUser` and
+  `getSession` with the same names, backed by a login proxy, OpenID Connect or Better Auth.
+  Permissions through OpenFGA. See [identity](docs/identity.md).
 - `vite dev` with the same backends as the built server
 
 Everything else Void's Node target supports is left alone. The examples only exercise API
@@ -111,9 +125,9 @@ routes, so pages and SSG have not been tested with OpenVoid yet.
 
 Not supported yet:
 
-- `void/auth`. Void refuses to build Void-managed auth for any non-Cloudflare target, before
-  any plugin runs. Supporting it needs either an upstream change or a separate OpenVoid auth
-  module built on Better Auth. This is the next piece of work.
+- `void/auth` itself and `auth` from `void/client`. Void stops the build when a Node app imports
+  them, before any plugin runs. Import from `@openvoid/node/auth` instead; for a browser client,
+  the Better Auth recipe shows Better Auth's own.
 - `void/ai`, `void/sandbox`, queues, cron triggers, Durable Objects, `void/live` and WebSocket
   routes. These stay Cloudflare-only for now.
 - MySQL. Void supports it; OpenVoid does not wire it up yet.

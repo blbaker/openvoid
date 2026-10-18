@@ -13,14 +13,24 @@
 #            read-only code dir, writable /tmp only, AWS_LAMBDA_HTTP_ENDPOINT, DynamoDB + S3 + PG
 #   docker   notes built into the recipes/docker image, data on a volume, survives a restart
 #   compose  notes-pg with recipes/docker/compose.full.yaml (PostgreSQL, Redis, SeaweedFS)
+#   proxy    notes with OPENVOID_AUTH=proxy: identity headers count only with the shared secret
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-SCENARIOS=${*:-local dev services lambda docker compose}
+# Extra scenarios live in scripts/e2e.d/<name>.sh, each defining scenario_<name>.
+EXTRA_SCENARIOS=""
+for extra in "$ROOT"/scripts/e2e.d/*.sh; do
+  [ -e "$extra" ] || continue
+  # shellcheck source=/dev/null
+  source "$extra"
+  EXTRA_SCENARIOS="$EXTRA_SCENARIOS $(basename "$extra" .sh)"
+done
+SCENARIOS=${*:-local dev services lambda docker compose proxy$EXTRA_SCENARIOS}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/openvoid-e2e.XXXXXX")
 PIDS=()
 CONTAINERS=()
 COMPOSE_DIRS=()
+COMPOSE_PROJECTS=()
 RESULTS=()
 
 # Each scenario runs in its own subshell with `set -e`; this stops whatever it started.
@@ -28,6 +38,10 @@ stop_started() {
   for pid in "${PIDS[@]}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
   for c in "${CONTAINERS[@]}"; do docker rm -f "$c" >/dev/null 2>&1 || true; done
   for d in "${COMPOSE_DIRS[@]}"; do (cd "$d" && docker compose -f compose.full.yaml -p openvoid-e2e down -v >/dev/null 2>&1) || true; done
+  # Entries are "<compose file>|<project name>".
+  for entry in "${COMPOSE_PROJECTS[@]}"; do
+    docker compose -f "${entry%%|*}" -p "${entry##*|}" down -v >/dev/null 2>&1 || true
+  done
 }
 trap 'rm -rf "$WORK"' EXIT
 
@@ -74,7 +88,7 @@ service_env() {
 # A fresh PostgreSQL database per scenario, so runs never see each other's tables.
 fresh_database() {
   local name="e2e_$1_$$"
-  docker exec openvoid-test-pg psql -q -U openvoid -d openvoid -c "DROP DATABASE IF EXISTS $name" -c "CREATE DATABASE $name" >/dev/null 2>&1
+  docker exec "${OPENVOID_SERVICES_PREFIX:-openvoid-test}-pg" psql -q -U openvoid -d openvoid -c "DROP DATABASE IF EXISTS $name" -c "CREATE DATABASE $name" >/dev/null 2>&1
   echo "${OPENVOID_TEST_DATABASE_URL%/*}/$name"
 }
 
@@ -172,6 +186,20 @@ scenario_compose() {
   (cd "$ctx" && docker compose -f compose.full.yaml -p openvoid-e2e up -d --build --quiet-pull >/dev/null 2>&1)
   wait_http "http://127.0.0.1:$port/api/health" 90
   smoke "http://127.0.0.1:$port"
+}
+
+scenario_proxy() {
+  log "proxy: OPENVOID_AUTH=proxy with a shared secret"
+  local port=3407 base="http://127.0.0.1:3407"
+  start_bg "$WORK/proxy.log" "cd '$ROOT/examples/notes' && OPENVOID_DATA_DIR='$WORK/proxy-data' OPENVOID_AUTH=proxy OPENVOID_AUTH_PROXY_SECRET=e2e-secret HOST=127.0.0.1 PORT=$port exec node dist/ssr/index.js"
+  wait_http "$base/api/health"
+  smoke "$base"
+  local who=(-H 'x-forwarded-user: doc' -H 'x-forwarded-email: doc@example.com' -H 'x-forwarded-groups: family,admins')
+  test "$(curl -s -o /dev/null -w '%{http_code}' "${who[@]}" "$base/api/me")" = 401
+  echo "PASS  identity headers without the secret are ignored"
+  curl -sf "${who[@]}" -H 'x-openvoid-proxy-secret: e2e-secret' "$base/api/me" >"$WORK/me.json"
+  grep -q '"id":"proxy:doc"' "$WORK/me.json" && grep -q '"groups":\["family","admins"\]' "$WORK/me.json"
+  echo "PASS  /api/me returns the proxy user with the secret"
 }
 
 build_examples

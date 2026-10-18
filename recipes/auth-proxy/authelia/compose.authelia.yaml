@@ -1,0 +1,38 @@
+# Authelia forward-auth through Caddy, in front of the app. Copy this file, recipes/docker/
+# Dockerfile and this authelia/ folder into your app's root, run `npm run build`, set a real
+# OPENVOID_AUTH_PROXY_SECRET, then:
+#   docker compose -f compose.authelia.yaml up -d --build
+#   open http://app.localtest.me:3442
+#
+# See ./README.md for what was and wasn't tested, and ../README.md for the recipe as a whole.
+services:
+  app:
+    build: .
+    environment:
+      OPENVOID_AUTH: proxy
+      OPENVOID_AUTH_PROXY_PRESET: authelia
+      OPENVOID_AUTH_PROXY_SECRET: ${OPENVOID_AUTH_PROXY_SECRET:-change-me-in-production}
+    # No ports: published. Only Caddy can reach this container.
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    environment:
+      OPENVOID_AUTH_PROXY_SECRET: ${OPENVOID_AUTH_PROXY_SECRET:-change-me-in-production}
+    ports:
+      - "127.0.0.1:3442:443"
+    depends_on:
+      - app
+      - authelia
+    restart: unless-stopped
+
+  authelia:
+    image: authelia/authelia:4.39.28
+    volumes:
+      # Not :ro: Authelia's entrypoint chowns these at startup; read-only mounts just print a
+      # harmless warning and it continues anyway, but there's no reason to keep the warning.
+      - ./configuration.yml:/config/configuration.yml
+      - ./users_database.yml:/config/users_database.yml
+    restart: unless-stopped

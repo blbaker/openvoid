@@ -1,0 +1,45 @@
+# Dex for local development and scripts/e2e.sh's oidc scenario. Not for production: the client
+# secret and the one static user's password below are checked into git on purpose.
+#
+# Run it:
+#   docker run -d --name openvoid-dex -p 127.0.0.1:55560:5556 \
+#     -v "$PWD/recipes/auth-oidc/dev/config.yaml:/etc/dex/config.yaml:ro" \
+#     ghcr.io/dexidp/dex:v2.45.1 dex serve /etc/dex/config.yaml
+#
+# Then point an OpenVoid app at it:
+#   OPENVOID_AUTH=oidc
+#   OPENVOID_AUTH_OIDC_ALLOW_HTTP=1
+#   OPENVOID_AUTH_OIDC_PROVIDERS=family
+#   OPENVOID_AUTH_OIDC_FAMILY_ISSUER=http://127.0.0.1:55560/dex
+#   OPENVOID_AUTH_OIDC_FAMILY_CLIENT_ID=openvoid-dev
+#   OPENVOID_AUTH_OIDC_FAMILY_CLIENT_SECRET=openvoid-dev-secret
+#
+# Sign in at /auth/login/family with doc@example.com / password (see staticPasswords below).
+issuer: http://127.0.0.1:55560/dex
+
+storage:
+  type: sqlite3
+  config:
+    file: /tmp/dex.db
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - id: openvoid-dev
+    secret: openvoid-dev-secret
+    name: "OpenVoid dev"
+    redirectURIs:
+      - "http://127.0.0.1:3410/auth/callback/family"
+
+enablePasswordDB: true
+
+# bcrypt hash of the string "password" (the one from Dex's own examples/config-dev.yaml).
+staticPasswords:
+  - email: "doc@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: "doc"
+    userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"

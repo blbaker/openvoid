@@ -10,11 +10,13 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfigFromFile, loadEnv, normalizePath, type Plugin, type ResolvedConfig } from 'vite';
 import { closeEnv, createEnv, type Dialect, type OpenVoidEnv } from './env.ts';
-import { dbModule, migrationsModule, readMigrations, schemaDbModule, serverEntryModule, type DbModulePaths } from './codegen.ts';
+import { dbModule, fgaModelModule, migrationsModule, readFgaModel, readMigrations, schemaDbModule, serverEntryModule, type DbModulePaths } from './codegen.ts';
 import { applyPgMigrations, applySqliteMigrations } from './migrate.ts';
 import { runWithEnv } from './scope.ts';
 import { packageDir, resolveEsm } from './resolve.ts';
 import type { SqliteD1Database } from './bindings/d1-sqlite.ts';
+import { createAuth, type Auth } from './auth/handler.ts';
+import { authMiddleware } from './auth/node-adapter.ts';
 
 export type OpenVoidOptions = {
   /** Override the dialect from void.config.ts. */
@@ -26,6 +28,7 @@ type VoidConfig = { target?: string; database?: string; sourceDir?: string };
 const VIRTUAL_DB = '\0openvoid:db';
 const VIRTUAL_SCHEMA_DB = '\0openvoid:db-schema';
 const VIRTUAL_MIGRATIONS = '\0openvoid:migrations';
+const VIRTUAL_FGA_MODEL = '\0openvoid:fga-model';
 const NODE_TARGETS = new Set(['node', 'bun', 'deno']);
 // Runtime modules served straight from the installed void package.
 const PASSTHROUGH = new Set(['void/kv', 'void/storage', 'void/auth', 'void/env']);
@@ -67,6 +70,7 @@ export function openvoid(options: OpenVoidOptions = {}): Plugin {
 
   const serverEntry = () => normalizePath(join(root, '.void', 'index.ts'));
   const migrationsDir = () => join(sourceRoot, 'db', 'migrations');
+  const fgaModelPath = () => join(sourceRoot, 'fga', 'model.fga');
 
   function voidExport(id: string, client: boolean): string {
     const sub = id.slice('void/'.length);
@@ -74,7 +78,7 @@ export function openvoid(options: OpenVoidOptions = {}): Plugin {
     return resolveEsm(`void/${sub}`, root);
   }
 
-  async function devEnv(): Promise<OpenVoidEnv> {
+  async function devEnv(): Promise<{ env: OpenVoidEnv; auth: Auth }> {
     const vars = { ...loadEnv(resolved.mode, root, ''), ...process.env };
     const env = createEnv({ dialect, vars });
     const migrations = readMigrations(migrationsDir());
@@ -85,7 +89,20 @@ export function openvoid(options: OpenVoidOptions = {}): Plugin {
           : []
         : await applySqliteMigrations(env.DB as SqliteD1Database, migrations);
     for (const name of applied) resolved.logger.info(`[openvoid] applied migration ${name}`);
-    return env;
+    const auth = await createAuth({ env, vars, dialect });
+    await auth.migrate();
+    if (vars.OPENVOID_FGA_URL) {
+      const { migrateFga } = await import('./fga/index.ts');
+      await migrateFga(vars, readFgaModel(fgaModelPath()));
+    }
+    return { env, auth };
+  }
+
+  async function installDevMiddleware(server: { middlewares: { use: Function }; httpServer?: { once: Function } | null }) {
+    const { env, auth } = await devEnv();
+    server.middlewares.use((_req: unknown, _res: unknown, next: () => void) => runWithEnv(env, () => next()));
+    server.middlewares.use(authMiddleware(auth));
+    server.httpServer?.once('close', () => void auth.close().then(() => closeEnv(env)));
   }
 
   return {
@@ -137,6 +154,7 @@ export function openvoid(options: OpenVoidOptions = {}): Plugin {
         return VIRTUAL_DB;
       }
       if (id === 'virtual:openvoid-migrations') return VIRTUAL_MIGRATIONS;
+      if (id === 'virtual:openvoid-fga-model') return VIRTUAL_FGA_MODEL;
       return null;
     },
 
@@ -147,20 +165,20 @@ export function openvoid(options: OpenVoidOptions = {}): Plugin {
         for (const m of readMigrations(migrationsDir())) this.addWatchFile(join(migrationsDir(), m.name));
         return migrationsModule(migrationsDir());
       }
+      if (id === VIRTUAL_FGA_MODEL) {
+        if (existsSync(fgaModelPath())) this.addWatchFile(fgaModelPath());
+        return fgaModelModule(fgaModelPath());
+      }
       if (resolved?.command === 'build' && normalizePath(id) === serverEntry()) return serverEntryModule(dialect);
       return null;
     },
 
     async configureServer(server) {
-      const env = await devEnv();
-      server.middlewares.use((_req, _res, next) => runWithEnv(env, () => next()));
-      server.httpServer?.once('close', () => void closeEnv(env));
+      await installDevMiddleware(server);
     },
 
     async configurePreviewServer(server) {
-      const env = await devEnv();
-      server.middlewares.use((_req, _res, next) => runWithEnv(env, () => next()));
-      server.httpServer?.once('close', () => void closeEnv(env));
+      await installDevMiddleware(server);
     },
   };
 }

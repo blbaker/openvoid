@@ -9,6 +9,16 @@ sits behind each Void API, which files to copy into your app, and which commands
 | [AWS Lambda Web Functions](aws-lambda-web-functions) | PostgreSQL (RDS, Aurora) | DynamoDB | S3 | `e2e.sh lambda` (local contract run, see below) |
 | [Plain Node.js](node) | SQLite or PostgreSQL | SQLite, Redis or DynamoDB | Files or S3 | `e2e.sh local`, `e2e.sh services` |
 
+Sign-in and permissions work on any of the platforms above. See [identity](../docs/identity.md)
+for how the modes compare.
+
+| Recipe | `OPENVOID_AUTH` | Who signs people in | Tested by |
+| --- | --- | --- | --- |
+| [Login proxy](auth-proxy) | `proxy` | oauth2-proxy or Authelia in front of the app | `e2e.sh proxy`, `e2e.sh proxyoauth` |
+| [OIDC and GitHub](auth-oidc) | `oidc` | OpenVoid, through any OpenID Connect provider plus GitHub | `e2e.sh oidc` |
+| [Better Auth](auth-better-auth) | `better-auth` | OpenVoid through Better Auth: email and password, Google, GitHub, OIDC | `e2e.sh betterauth` |
+| [OpenFGA](authz-openfga) | any | Permissions on top of a sign-in mode | `e2e.sh openfga` |
+
 ## What "tested" means here
 
 - **Docker**: the image is built from the recipe's Dockerfile and run with both Compose files.
@@ -23,6 +33,18 @@ sits behind each Void API, which files to copy into your app, and which commands
   of October 2026.
 - **Plain Node.js**: the example apps run as plain `node` processes against local files and
   against PostgreSQL, Redis and S3.
+- **Login proxy**: oauth2-proxy with Dex is built from the recipe's Compose file and signed into
+  over real HTTP through Dex's login form. A request that skips the proxy with a forged
+  identity header gets a 401. The Authelia and Caddy setup was run by hand, not in `e2e.sh`.
+- **OIDC and GitHub**: a real Dex container, signed into through its login form with plain
+  `fetch`. GitHub runs against an in-test stand-in for its API. Authelia, Keycloak, Zitadel,
+  Google, Entra and Cognito follow each provider's documentation and have not been run.
+- **Better Auth**: email and password on SQLite and PostgreSQL, and OIDC through a real Dex
+  container, including groups from Dex's `groups` claim. Real Google and GitHub apps have not
+  been run; their redirect and state cookie are covered with fake credentials.
+- **OpenFGA**: a real OpenFGA container behind the `notes` example: owners, a denied stranger,
+  a share to a group, and that group's members reading but not writing. The production
+  Compose file and Okta FGA were checked by hand or from documentation.
 
 ## Adding a recipe
 
