@@ -10,7 +10,7 @@ scenario_openfga() {
   local fga_port=46280 port=3420 base="http://127.0.0.1:3420" fga_name=openvoid-e2e-fga
 
   docker rm -f "$fga_name" >/dev/null 2>&1 || true
-  docker run -d --name "$fga_name" -p "127.0.0.1:$fga_port:8080" openfga/openfga run >/dev/null
+  docker run -d --name "$fga_name" -p "127.0.0.1:$fga_port:8080" openfga/openfga:v1.22.0 run >/dev/null
   CONTAINERS+=("$fga_name")
   wait_http "http://127.0.0.1:$fga_port/healthz" 30
 

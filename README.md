@@ -161,7 +161,7 @@ tests.
 pnpm install
 pnpm typecheck
 pnpm test                          # SQLite and filesystem backends only
-scripts/services.sh up             # Redis, SeaweedFS (S3), DynamoDB Local, PostgreSQL
+scripts/services.sh up             # Redis, SeaweedFS (S3), DynamoDB Local, PostgreSQL, OpenFGA
 eval "$(scripts/services.sh env)"
 pnpm test                          # every backend
 bash scripts/e2e.sh                # build the examples and run every recipe scenario
