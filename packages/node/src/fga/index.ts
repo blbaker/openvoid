@@ -1,10 +1,14 @@
-// OpenFGA authorization. Placeholder until the module lands; see docs/identity.md.
-import type { AuthUser, Vars } from '../auth/types.ts';
-
-/** Create the store if needed and write fga/model.fga when it changed. Runs with `migrate`. */
-export async function migrateFga(_vars: Vars, _modelSource: string | null): Promise<void> {
-  throw new Error('openvoid: OPENVOID_FGA_URL is set but OpenFGA support is not implemented in this build yet.');
-}
-
-/** Called after every sign-in, e.g. to mirror the user's groups into OpenFGA. */
-export async function onSignIn(_user: AuthUser, _vars: Vars): Promise<void> {}
+// OpenFGA authorization. See docs/identity.md ("Authorization with OpenFGA") and
+// recipes/authz-openfga for the full picture; this file just wires the pieces together.
+//
+//   migrateFga(vars, modelSource)   creates the store and writes fga/model.fga; runs with `migrate`
+//   onSignIn(user, vars)            mirrors groups into OpenFGA when OPENVOID_FGA_SYNC_GROUPS=1
+//   check / requirePermission / listObjects / grant / revoke / writeTuples / deleteTuples / fgaUser
+//                                   the runtime API routes import from `@openvoid/node/fga`
+export { migrateFga } from './model.ts';
+export { onSignIn } from './sync.ts';
+export { fgaUser } from './user.ts';
+export { check, requirePermission, listObjects, grant, revoke, writeTuples, deleteTuples } from './runtime.ts';
+export type { FgaTuple, FgaCheckOptions, FgaGrantOptions } from './runtime.ts';
+export { encodeFgaId, decodeFgaId } from './ids.ts';
+export { resetFgaContextCache } from './client.ts';
