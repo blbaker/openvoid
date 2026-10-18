@@ -1,4 +1,4 @@
-// The runtime API apps import as `@openvoid/node/fga`: check, requirePermission, listObjects,
+// The runtime API apps import as `@blbaker/openvoid/fga`: check, requirePermission, listObjects,
 // grant/revoke and the writeTuples/deleteTuples passthrough.
 //
 // Configuration is read from process.env, the same object migrateFga/onSignIn are handed as

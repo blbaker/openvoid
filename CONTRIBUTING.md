@@ -22,7 +22,7 @@ backends and skips the rest.
 
 ## Layout
 
-- `packages/node`: the `@openvoid/node` package. `src/plugin.ts` is the Vite plugin,
+- `packages/node`: the `@blbaker/openvoid` package. `src/plugin.ts` is the Vite plugin,
   `src/server.ts` the production entry, `src/bindings/` the backends.
 - `examples/notes` and `examples/notes-pg`: small Void apps that use every supported API.
 - `recipes/`: one folder per platform.

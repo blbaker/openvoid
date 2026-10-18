@@ -145,7 +145,7 @@ export function openvoid(options: OpenVoidOptions = {}): Plugin {
       layout = await readProjectLayout(resolve(userConfig.root ?? process.cwd()), options);
       const { schema } = layout.paths;
       return {
-        ssr: { noExternal: ['@openvoid/node'] },
+        ssr: { noExternal: ['@blbaker/openvoid'] },
         resolve: { alias: schema ? [{ find: /^@schema$/, replacement: schema }] : [] },
       };
     },

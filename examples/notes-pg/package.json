@@ -13,7 +13,7 @@
     "hono": "^4.13.13"
   },
   "devDependencies": {
-    "@openvoid/node": "workspace:*",
+    "@blbaker/openvoid": "workspace:*",
     "vite": "^8.0.0",
     "void": "1.1.11"
   }

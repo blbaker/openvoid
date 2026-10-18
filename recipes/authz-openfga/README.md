@@ -11,7 +11,7 @@ authorization model once (who can be an `owner`, `editor`, `viewer` of a `doc`, 
 store relationships as tuples ("alice is owner of doc:roadmap"), and ask OpenFGA "can alice view
 doc:roadmap" wherever your app needs the answer.
 
-`@openvoid/node/fga` wires this into OpenVoid: your app's `fga/model.fga` is bundled at build
+`@blbaker/openvoid/fga` wires this into OpenVoid: your app's `fga/model.fga` is bundled at build
 time and written to the OpenFGA store on every migrate, and `check`, `requirePermission`,
 `listObjects`, `grant` and `revoke` are the API routes use at request time.
 
@@ -89,8 +89,8 @@ row with no changes writes nothing.
 ```ts
 import { defineHandler } from 'void';
 import { kv } from 'void/kv';
-import { requireAuth } from '@openvoid/node/auth';
-import { grant, requirePermission } from '@openvoid/node/fga';
+import { requireAuth } from '@blbaker/openvoid/auth';
+import { grant, requirePermission } from '@blbaker/openvoid/fga';
 
 export const GET = defineHandler(async (c) => {
   const id = c.req.param('id');
@@ -117,7 +117,7 @@ export const PUT = defineHandler(async (c) => {
 `examples/notes/routes/api/docs/[id].ts` and `[id]/share.ts` are the full version of this,
 including sharing a doc with a group.
 
-The full runtime API, all imported from `@openvoid/node/fga`:
+The full runtime API, all imported from `@blbaker/openvoid/fga`:
 
 | Function | Does |
 | --- | --- |
@@ -165,8 +165,8 @@ you use `proxy` mode with group sync, call it yourself, early in a request, befo
 permission check:
 
 ```ts
-import { getUser } from '@openvoid/node/auth';
-import { onSignIn } from '@openvoid/node/fga';
+import { getUser } from '@blbaker/openvoid/auth';
+import { onSignIn } from '@blbaker/openvoid/fga';
 
 const user = getUser();
 if (user) await onSignIn(user, process.env);

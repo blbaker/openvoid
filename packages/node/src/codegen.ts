@@ -107,7 +107,7 @@ export function serverEntryModule(dialect: Dialect): string {
   return `import app from "./app.js";
 import migrations from "virtual:openvoid-migrations";
 import fgaModel from "virtual:openvoid-fga-model";
-import { startServer } from "@openvoid/node/server";
+import { startServer } from "@blbaker/openvoid/server";
 
 await startServer({ app, migrations, fgaModel, dialect: ${JSON.stringify(dialect)} });
 `;

@@ -1,5 +1,5 @@
 import { defineHandler } from 'void';
-import { requireAuth } from '@openvoid/node/auth';
+import { requireAuth } from '@blbaker/openvoid/auth';
 
 // Signed-in user, or 401. Works with every OPENVOID_AUTH mode.
 export const GET = defineHandler(() => {
