@@ -46,126 +46,136 @@ function isSameSite(request: Request, publicUrl: string): boolean {
   return true;
 }
 
-export async function createMode(ctx: AuthModeContext): Promise<AuthMode> {
-  const { vars, basePath, sessions } = ctx;
-  const config = parseConfig(vars);
-  const kv = ctx.env.KV as KV;
+/** Everything the request handlers share, built once by createMode. */
+type Runtime = {
+  ctx: AuthModeContext;
+  config: ReturnType<typeof parseConfig>;
+  kv: KV;
+  byName: Map<string, ProviderConfig>;
+  oidcClients: Map<string, client.Configuration>;
+};
 
-  const byName = new Map<string, ProviderConfig>(config.providers.map((p) => [p.name, p]));
+type SignedInProfile = Pick<AuthUser, 'subject' | 'email' | 'emailVerified' | 'name' | 'image' | 'groups'>;
+
+/** Copies the profile fields by name, so a field later added to a provider's result (a token,
+ * raw claims) can't reach the session or the /auth/session JSON without a change here. */
+function toUser(provider: ProviderConfig, p: SignedInProfile): AuthUser {
+  return {
+    id: `${provider.name}:${p.subject}`,
+    provider: provider.name,
+    subject: p.subject,
+    email: p.email,
+    emailVerified: p.emailVerified,
+    name: p.name,
+    image: p.image,
+    groups: p.groups,
+  };
+}
+
+async function startSignIn(rt: Runtime, request: Request, provider: ProviderConfig, returnTo: string): Promise<Response> {
+  const { basePath } = rt.ctx;
+  const state = randomState();
+  const redirect = redirectUri(rt.config.publicUrl, basePath, provider.name);
+  let location: string;
+  if (provider.type === 'github') {
+    await createPending(rt.kv, state, { provider: provider.name, returnTo });
+    location = githubAuthorizationUrl(provider, { redirectUri: redirect, state });
+  } else {
+    const codeVerifier = client.randomPKCECodeVerifier();
+    const codeChallenge = await client.calculatePKCECodeChallenge(codeVerifier);
+    const nonce = client.randomNonce();
+    await createPending(rt.kv, state, { provider: provider.name, returnTo, codeVerifier, nonce });
+    location = oidcAuthorizationUrl(rt.oidcClients.get(provider.name)!, {
+      redirectUri: redirect,
+      scopes: provider.scopes,
+      state,
+      nonce,
+      codeChallenge,
+    });
+  }
+  return new Response(null, { status: 302, headers: { location, 'set-cookie': setTxnCookie(request, basePath, state) } });
+}
+
+async function handleCallback(rt: Runtime, request: Request, url: URL, provider: ProviderConfig): Promise<Response> {
+  const { basePath, sessions } = rt.ctx;
+  const cookieState = readTxnCookie(request);
+  const queryState = url.searchParams.get('state');
+  const mismatch = Response.json(
+    { error: 'sign-in session expired, or this callback was not started from this browser. Please try again.' },
+    { status: 400, headers: { 'set-cookie': clearTxnCookie(request, basePath) } },
+  );
+  if (!cookieState || !queryState || cookieState !== queryState) return mismatch;
+
+  const pending = await consumePending(rt.kv, cookieState);
+  if (!pending || pending.provider !== provider.name) return mismatch;
+  const clearTxn = clearTxnCookie(request, basePath);
+
+  const authError = url.searchParams.get('error');
+  if (authError) {
+    const description = url.searchParams.get('error_description') ?? authError;
+    return Response.json({ error: `${provider.label} sign-in failed: ${description}` }, { status: 400, headers: { 'set-cookie': clearTxn } });
+  }
+
+  const redirect = redirectUri(rt.config.publicUrl, basePath, provider.name);
+  let user: AuthUser;
+  let idToken: string | null = null;
+  if (provider.type === 'github') {
+    const code = url.searchParams.get('code');
+    if (!code) return Response.json({ error: 'missing authorization code' }, { status: 400, headers: { 'set-cookie': clearTxn } });
+    const accessToken = await githubExchangeCode(provider, { code, redirectUri: redirect });
+    user = toUser(provider, await githubFetchUser(provider, accessToken));
+  } else {
+    const callbackUrl = new URL(redirect);
+    callbackUrl.search = url.search;
+    const signedIn = await oidcExchange(rt.oidcClients.get(provider.name)!, provider, {
+      callbackUrl,
+      codeVerifier: pending.codeVerifier!,
+      state: cookieState,
+      nonce: pending.nonce!,
+    });
+    idToken = signedIn.idToken;
+    user = toUser(provider, signedIn);
+  }
+
+  await rt.ctx.hooks.onSignIn(user);
+  const session = await sessions.create(user, idToken ? { idToken } : {});
+  const headers = new Headers({ location: safeReturnTo(pending.returnTo) });
+  headers.append('set-cookie', sessions.setCookie(request, session));
+  headers.append('set-cookie', clearTxn);
+  return new Response(null, { status: 302, headers });
+}
+
+async function handleLogout(rt: Runtime, request: Request): Promise<Response> {
+  const { sessions } = rt.ctx;
+  if (!isSameSite(request, rt.config.publicUrl)) {
+    return Response.json({ error: 'cross-site sign-out requests are rejected' }, { status: 403 });
+  }
+  const sessionId = sessions.idFrom(request);
+  const session = sessionId ? await sessions.get(sessionId) : null;
+  if (session) await sessions.delete(session.id);
+
+  let redirectTo: string | null = null;
+  const { logoutProvider } = rt.config;
+  if (session && logoutProvider && session.user.provider === logoutProvider) {
+    const provider = rt.byName.get(logoutProvider);
+    const oidcConfig = provider?.type === 'oidc' ? rt.oidcClients.get(provider.name) : undefined;
+    if (oidcConfig) {
+      const idTokenHint = (session.extra as { idToken?: string }).idToken ?? null;
+      redirectTo = endSessionUrl(oidcConfig, { idTokenHint, postLogoutRedirectUri: rt.config.publicUrl });
+    }
+  }
+  return Response.json({ ok: true, redirectTo }, { headers: { 'set-cookie': sessions.clearCookie(request) } });
+}
+
+export async function createMode(ctx: AuthModeContext): Promise<AuthMode> {
+  const { basePath, sessions } = ctx;
+  const config = parseConfig(ctx.vars);
   const oidcClients = new Map<string, client.Configuration>();
   for (const provider of config.providers) {
     if (provider.type === 'oidc') oidcClients.set(provider.name, await discoverOidcClient(provider));
   }
-
-  async function startSignIn(request: Request, provider: ProviderConfig, returnTo: string): Promise<Response> {
-    const state = randomState();
-    const redirect = redirectUri(config.publicUrl, basePath, provider.name);
-    let location: string;
-    if (provider.type === 'github') {
-      await createPending(kv, state, { provider: provider.name, returnTo });
-      location = githubAuthorizationUrl(provider, { redirectUri: redirect, state });
-    } else {
-      const codeVerifier = client.randomPKCECodeVerifier();
-      const codeChallenge = await client.calculatePKCECodeChallenge(codeVerifier);
-      const nonce = client.randomNonce();
-      await createPending(kv, state, { provider: provider.name, returnTo, codeVerifier, nonce });
-      location = oidcAuthorizationUrl(oidcClients.get(provider.name)!, {
-        redirectUri: redirect,
-        scopes: provider.scopes,
-        state,
-        nonce,
-        codeChallenge,
-      });
-    }
-    return new Response(null, { status: 302, headers: { location, 'set-cookie': setTxnCookie(request, basePath, state) } });
-  }
-
-  async function handleCallback(request: Request, url: URL, provider: ProviderConfig): Promise<Response> {
-    const cookieState = readTxnCookie(request);
-    const queryState = url.searchParams.get('state');
-    const mismatch = Response.json(
-      { error: 'sign-in session expired, or this callback was not started from this browser. Please try again.' },
-      { status: 400, headers: { 'set-cookie': clearTxnCookie(request, basePath) } },
-    );
-    if (!cookieState || !queryState || cookieState !== queryState) return mismatch;
-
-    const pending = await consumePending(kv, cookieState);
-    if (!pending || pending.provider !== provider.name) return mismatch;
-    const clearTxn = clearTxnCookie(request, basePath);
-
-    const authError = url.searchParams.get('error');
-    if (authError) {
-      const description = url.searchParams.get('error_description') ?? authError;
-      return Response.json({ error: `${provider.label} sign-in failed: ${description}` }, { status: 400, headers: { 'set-cookie': clearTxn } });
-    }
-
-    const redirect = redirectUri(config.publicUrl, basePath, provider.name);
-    let user: AuthUser;
-    let idToken: string | null = null;
-    if (provider.type === 'github') {
-      const code = url.searchParams.get('code');
-      if (!code) return Response.json({ error: 'missing authorization code' }, { status: 400, headers: { 'set-cookie': clearTxn } });
-      const accessToken = await githubExchangeCode(provider, { code, redirectUri: redirect });
-      const githubUser = await githubFetchUser(provider, accessToken);
-      user = {
-        id: `${provider.name}:${githubUser.subject}`,
-        provider: provider.name,
-        subject: githubUser.subject,
-        email: githubUser.email,
-        emailVerified: githubUser.emailVerified,
-        name: githubUser.name,
-        image: githubUser.image,
-        groups: githubUser.groups,
-      };
-    } else {
-      const callbackUrl = new URL(redirect);
-      callbackUrl.search = url.search;
-      const signedIn = await oidcExchange(oidcClients.get(provider.name)!, provider, {
-        callbackUrl,
-        codeVerifier: pending.codeVerifier!,
-        state: cookieState,
-        nonce: pending.nonce!,
-      });
-      idToken = signedIn.idToken;
-      user = {
-        id: `${provider.name}:${signedIn.subject}`,
-        provider: provider.name,
-        subject: signedIn.subject,
-        email: signedIn.email,
-        emailVerified: signedIn.emailVerified,
-        name: signedIn.name,
-        image: signedIn.image,
-        groups: signedIn.groups,
-      };
-    }
-
-    await ctx.hooks.onSignIn(user);
-    const session = await sessions.create(user, idToken ? { idToken } : {});
-    const headers = new Headers({ location: safeReturnTo(pending.returnTo) });
-    headers.append('set-cookie', sessions.setCookie(request, session));
-    headers.append('set-cookie', clearTxn);
-    return new Response(null, { status: 302, headers });
-  }
-
-  async function handleLogout(request: Request): Promise<Response> {
-    if (!isSameSite(request, config.publicUrl)) {
-      return Response.json({ error: 'cross-site sign-out requests are rejected' }, { status: 403 });
-    }
-    const sessionId = sessions.idFrom(request);
-    const session = sessionId ? await sessions.get(sessionId) : null;
-    if (session) await sessions.delete(session.id);
-
-    let redirectTo: string | null = null;
-    if (session && config.logoutProvider && session.user.provider === config.logoutProvider) {
-      const provider = byName.get(config.logoutProvider);
-      const oidcConfig = provider?.type === 'oidc' ? oidcClients.get(provider.name) : undefined;
-      if (oidcConfig) {
-        const idTokenHint = (session.extra as { idToken?: string }).idToken ?? null;
-        redirectTo = endSessionUrl(oidcConfig, { idTokenHint, postLogoutRedirectUri: config.publicUrl });
-      }
-    }
-    return Response.json({ ok: true, redirectTo }, { headers: { 'set-cookie': sessions.clearCookie(request) } });
-  }
+  const byName = new Map<string, ProviderConfig>(config.providers.map((p) => [p.name, p]));
+  const rt: Runtime = { ctx, config, kv: ctx.env.KV as KV, byName, oidcClients };
 
   async function handle(request: Request): Promise<Response | null> {
     const url = new URL(request.url);
@@ -173,7 +183,7 @@ export async function createMode(ctx: AuthModeContext): Promise<AuthMode> {
 
     if (pathname === `${basePath}/login` && request.method === 'GET') {
       const returnTo = safeReturnTo(url.searchParams.get('returnTo'));
-      if (config.providers.length === 1) return startSignIn(request, config.providers[0]!, returnTo);
+      if (config.providers.length === 1) return startSignIn(rt, request, config.providers[0]!, returnTo);
       return new Response(renderChooser(config.providers, basePath, returnTo), {
         headers: { 'content-type': 'text/html; charset=utf-8' },
       });
@@ -182,16 +192,16 @@ export async function createMode(ctx: AuthModeContext): Promise<AuthMode> {
     if (pathname.startsWith(`${basePath}/login/`) && request.method === 'GET') {
       const provider = byName.get(decodeURIComponent(pathname.slice(`${basePath}/login/`.length)));
       if (!provider) return null;
-      return startSignIn(request, provider, safeReturnTo(url.searchParams.get('returnTo')));
+      return startSignIn(rt, request, provider, safeReturnTo(url.searchParams.get('returnTo')));
     }
 
     if (pathname.startsWith(`${basePath}/callback/`) && request.method === 'GET') {
       const provider = byName.get(decodeURIComponent(pathname.slice(`${basePath}/callback/`.length)));
       if (!provider) return null;
-      return handleCallback(request, url, provider);
+      return handleCallback(rt, request, url, provider);
     }
 
-    if (pathname === `${basePath}/logout` && request.method === 'POST') return handleLogout(request);
+    if (pathname === `${basePath}/logout` && request.method === 'POST') return handleLogout(rt, request);
 
     return null;
   }
