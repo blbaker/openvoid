@@ -29,24 +29,33 @@ export type AdapterLike = {
   findMany<T>(data: { model: string; where?: Where[]; sortBy?: { field: string; direction: 'asc' | 'desc' } }): Promise<T[]>;
 };
 
-export function parseGroups(raw: unknown): string[] {
-  if (typeof raw !== 'string' || raw.length === 0) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((g): g is string => typeof g === 'string') : [];
-  } catch {
-    return [];
+let warnedBadGroups = false;
+
+/**
+ * Only this module writes the column, so a value that isn't a JSON array means a hand-edited
+ * row. No groups is the safe reading (it can only take access away); warn once rather than
+ * failing every request that user makes.
+ */
+function badGroups(detail: unknown): string[] {
+  if (!warnedBadGroups) {
+    warnedBadGroups = true;
+    console.warn('[openvoid] a user.groups value is not a JSON array of strings; treating it as no groups:', detail);
   }
+  return [];
 }
 
-/** The oldest non-credential account, or null when the user only has email+password. */
-export function primaryAccount(accounts: AccountRow[]): AccountRow | null {
-  const external = accounts.filter((a) => a.providerId !== 'credential');
-  if (external.length === 0) return null;
-  return external.slice().sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0] ?? null;
+function parseGroups(raw: unknown): string[] {
+  if (typeof raw !== 'string' || raw.length === 0) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return badGroups(error);
+  }
+  return Array.isArray(parsed) ? parsed.filter((g): g is string => typeof g === 'string') : badGroups(parsed);
 }
 
-export function toAuthUser(user: UserRow, account: AccountRow | null): AuthUser {
+function toAuthUser(user: UserRow, account: AccountRow | undefined): AuthUser {
   const provider = account?.providerId ?? 'local';
   const subject = account?.accountId ?? user.id;
   return {
@@ -61,14 +70,14 @@ export function toAuthUser(user: UserRow, account: AccountRow | null): AuthUser 
   };
 }
 
-/** Loads the linked accounts and builds the AuthUser for an already-fetched user row. */
 export async function loadAuthUser(adapter: AdapterLike, user: UserRow): Promise<AuthUser> {
   const accounts = await adapter.findMany<AccountRow>({
     model: 'account',
     where: [{ field: 'userId', value: user.id }],
     sortBy: { field: 'createdAt', direction: 'asc' },
   });
-  return toAuthUser(user, primaryAccount(accounts));
+  // Oldest first, so this picks the first provider the user ever linked.
+  return toAuthUser(user, accounts.find((a) => a.providerId !== 'credential'));
 }
 
 /** Normalizes an OIDC groups claim (array, comma-separated string, or absent) to string[]. */

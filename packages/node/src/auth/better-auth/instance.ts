@@ -5,7 +5,7 @@ import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { genericOAuth, type GenericOAuthUserInfo } from 'better-auth/plugins/generic-oauth';
 import type { AuthModeContext } from '../types.ts';
 import type { BetterAuthModeConfig } from './env.ts';
-import { loadAuthUser, normalizeGroupsClaim, type AccountRow, type UserRow } from './user.ts';
+import { loadAuthUser, normalizeGroupsClaim } from './user.ts';
 
 /**
  * Groups come only from an identity provider. The field has to accept input (Better Auth drops
@@ -55,7 +55,6 @@ export function buildBetterAuthOptions(ctx: AuthModeContext, cfg: BetterAuthMode
     basePath: ctx.basePath,
     baseURL: cfg.baseURL,
     secret: cfg.secret,
-    // Better Auth's Kysely adapter accepts a raw D1Database or pg.Pool directly; see database.ts.
     database: database as NonNullable<BetterAuthOptions['database']>,
     emailAndPassword: { enabled: cfg.emailAndPassword },
     socialProviders,
@@ -84,7 +83,7 @@ export function buildBetterAuthOptions(ctx: AuthModeContext, cfg: BetterAuthMode
             if (!context) return;
             const user = await context.context.internalAdapter.findUserById(session.userId);
             if (!user) return;
-            const authUser = await loadAuthUser(context.context.adapter, user as unknown as UserRow);
+            const authUser = await loadAuthUser(context.context.adapter, user);
             await ctx.hooks.onSignIn(authUser);
           },
         },
@@ -92,5 +91,3 @@ export function buildBetterAuthOptions(ctx: AuthModeContext, cfg: BetterAuthMode
     },
   };
 }
-
-export type { AccountRow, UserRow };

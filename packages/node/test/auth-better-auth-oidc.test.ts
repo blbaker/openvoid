@@ -10,10 +10,8 @@ import type { AddressInfo } from 'node:net';
 import { SqliteKVNamespace } from '../src/bindings/kv-sqlite.ts';
 import { SqliteD1Database } from '../src/bindings/d1-sqlite.ts';
 import { createAuth, type Auth } from '../src/auth/handler.ts';
-import type { AuthUser, Vars } from '../src/auth/types.ts';
+import { betterAuthVars, CookieJar, noNext, postJson, PUBLIC_URL, req, sessionUser } from './better-auth-helpers.ts';
 
-const SECRET = 'unit-test-secret-at-least-32-characters-long';
-const PUBLIC_URL = 'http://app.test';
 const b64url = (data: Buffer | string) => Buffer.from(data).toString('base64url');
 
 /** Minimal OIDC provider: the test plays the browser's part at the authorize step. */
@@ -89,29 +87,6 @@ class FakeOidcProvider {
   }
 }
 
-class CookieJar {
-  #cookies = new Map<string, string>();
-  absorb(res: Response): void {
-    for (const line of res.headers.getSetCookie()) {
-      const pair = line.split(';', 1)[0]!;
-      const eq = pair.indexOf('=');
-      if (eq > 0) this.#cookies.set(pair.slice(0, eq), pair.slice(eq + 1));
-    }
-  }
-  header(): string {
-    return [...this.#cookies].map(([k, v]) => `${k}=${v}`).join('; ');
-  }
-}
-
-const req = (path: string, jar?: CookieJar, init: RequestInit = {}) =>
-  new Request(`${PUBLIC_URL}${path}`, { ...init, headers: { ...(init.headers as Record<string, string>), ...(jar ? { cookie: jar.header() } : {}) } });
-const noNext = async () => new Response('next must not run for an auth path', { status: 500 });
-
-async function sessionUser(auth: Auth, jar: CookieJar): Promise<AuthUser | null> {
-  const res = await auth.wrap(req('/auth/session', jar), noNext);
-  return ((await res.json()) as { user: AuthUser | null }).user;
-}
-
 /** Browser-side sign-in: start, "log in" at the provider, follow the callback. */
 async function signInThroughProvider(auth: Auth, provider: FakeOidcProvider, groups: string[]): Promise<CookieJar> {
   const jar = new CookieJar();
@@ -138,12 +113,11 @@ describe('better-auth mode with an OIDC provider (genericOAuth)', () => {
   before(async () => {
     await provider.start();
     db = new SqliteD1Database({ path: ':memory:' });
-    const vars: Vars = {
-      OPENVOID_AUTH: 'better-auth', OPENVOID_PUBLIC_URL: PUBLIC_URL, BETTER_AUTH_SECRET: SECRET,
+    const vars = betterAuthVars({
       OPENVOID_AUTH_OIDC_PROVIDERS: 'fake', OPENVOID_AUTH_OIDC_FAKE_ISSUER: provider.issuer,
       OPENVOID_AUTH_OIDC_FAKE_CLIENT_ID: 'fake-client', OPENVOID_AUTH_OIDC_FAKE_CLIENT_SECRET: 'fake-secret',
       OPENVOID_AUTH_OIDC_FAKE_SCOPES: 'openid profile email groups',
-    };
+    });
     auth = await createAuth({ env: { KV: new SqliteKVNamespace({ path: ':memory:' }), DB: db }, vars, dialect: 'sqlite' });
     await auth.migrate();
   });
@@ -180,27 +154,17 @@ describe('better-auth mode with an OIDC provider (genericOAuth)', () => {
   });
 
   it('does not let a client set its own groups through sign-up or update-user', async () => {
-    const json = (body: unknown, jar?: CookieJar): RequestInit => ({
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...(jar ? { cookie: jar.header() } : {}) },
-      body: JSON.stringify(body),
-    });
-    const signUp = (body: unknown) => auth.wrap(new Request(`${PUBLIC_URL}/auth/sign-up/email`, json(body)), noNext);
-
-    const sneaky = await signUp({ email: 'eve@example.com', password: 'sekrit123', name: 'Eve', groups: '["admins"]' });
+    const eve = { email: 'eve@example.com', password: 'sekrit123', name: 'Eve' };
+    const sneaky = await auth.wrap(postJson('/auth/sign-up/email', { ...eve, groups: '["admins"]' }), noNext);
     assert.equal(sneaky.status, 400, await sneaky.clone().text());
 
-    const honest = await signUp({ email: 'eve@example.com', password: 'sekrit123', name: 'Eve' });
+    const honest = await auth.wrap(postJson('/auth/sign-up/email', eve), noNext);
     assert.equal(honest.status, 200, 'the refused attempt must not have created the account');
     const jar = new CookieJar();
     jar.absorb(honest);
     assert.deepEqual((await sessionUser(auth, jar))?.groups, []);
 
-    // A browser sends Origin on POST; Better Auth's CSRF check requires it once cookies are present.
-    const update = await auth.wrap(
-      new Request(`${PUBLIC_URL}/auth/update-user`, { ...json({ groups: '["admins"]' }, jar), headers: { ...(json({}, jar).headers as Record<string, string>), origin: PUBLIC_URL } }),
-      noNext,
-    );
+    const update = await auth.wrap(postJson('/auth/update-user', { groups: '["admins"]' }, jar), noNext);
     assert.equal(update.status, 400, await update.clone().text());
     assert.deepEqual((await sessionUser(auth, jar))?.groups, []);
   });

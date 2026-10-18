@@ -3,33 +3,19 @@
 // Checked on the real session cookie a sign-up sets, not on the config object.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { SqliteKVNamespace } from '../src/bindings/kv-sqlite.ts';
-import { SqliteD1Database } from '../src/bindings/d1-sqlite.ts';
-import { createAuth } from '../src/auth/handler.ts';
 import type { Vars } from '../src/auth/types.ts';
+import { betterAuthVars, noNext, postJson, withSqliteAuth } from './better-auth-helpers.ts';
 
 async function sessionCookieAfterSignUp(publicUrl: string, extra: Vars): Promise<string> {
-  const db = new SqliteD1Database({ path: ':memory:' });
-  const vars: Vars = { OPENVOID_AUTH: 'better-auth', OPENVOID_PUBLIC_URL: publicUrl, BETTER_AUTH_SECRET: 'unit-test-secret-at-least-32-characters-long', ...extra };
-  const auth = await createAuth({ env: { KV: new SqliteKVNamespace({ path: ':memory:' }), DB: db }, vars, dialect: 'sqlite' });
-  try {
-    await auth.migrate();
-    const res = await auth.wrap(
-      new Request(`${publicUrl}/auth/sign-up/email`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'doc@example.com', password: 'sekrit123', name: 'Doc' }),
-      }),
-      async () => new Response('no', { status: 500 }),
-    );
+  let cookie: string | undefined;
+  await withSqliteAuth(betterAuthVars(extra, publicUrl), async (auth) => {
+    const signUp = postJson('/auth/sign-up/email', { email: 'doc@example.com', password: 'sekrit123', name: 'Doc' }, undefined, publicUrl);
+    const res = await auth.wrap(signUp, noNext);
     assert.equal(res.status, 200, await res.clone().text());
-    const cookie = res.headers.getSetCookie().find((c) => /session_token=/.test(c));
-    assert.ok(cookie, 'sign-up must set a session cookie');
-    return cookie;
-  } finally {
-    await auth.close();
-    db.close();
-  }
+    cookie = res.headers.getSetCookie().find((c) => /session_token=/.test(c));
+  });
+  assert.ok(cookie, 'sign-up must set a session cookie');
+  return cookie;
 }
 
 describe('better-auth mode: shared session settings', () => {
@@ -37,8 +23,7 @@ describe('better-auth mode: shared session settings', () => {
     const http = await sessionCookieAfterSignUp('http://app.test', {});
     assert.match(http, /Max-Age=2592000/);
     assert.doesNotMatch(http, /;\s*Secure/i);
-    const https = await sessionCookieAfterSignUp('https://app.test', {});
-    assert.match(https, /;\s*Secure/i);
+    assert.match(await sessionCookieAfterSignUp('https://app.test', {}), /;\s*Secure/i);
   });
 
   it('uses OPENVOID_AUTH_SESSION_DAYS for the session lifetime', async () => {

@@ -12,14 +12,31 @@
 //   OPENVOID_AUTH_OIDC_<NAME>_ISSUER / _CLIENT_ID / _CLIENT_SECRET / _SCOPES / _GROUPS_CLAIM
 //
 // See recipes/auth-better-auth for the full picture (endpoints, provider setup, what's tested).
-import { betterAuth } from 'better-auth';
+import { betterAuth, type Auth as BetterAuth, type BetterAuthOptions } from 'better-auth';
 import { getMigrations } from 'better-auth/db/migration';
 import { safeReturnTo } from '../sessions.ts';
 import { createDatabaseBinding } from '../better-auth/database.ts';
 import { parseConfig } from '../better-auth/env.ts';
 import { buildBetterAuthOptions } from '../better-auth/instance.ts';
-import { loadAuthUser, type UserRow } from '../better-auth/user.ts';
+import { loadAuthUser } from '../better-auth/user.ts';
 import type { AuthMode, AuthModeContext, AuthSession } from '../types.ts';
+
+async function startSignIn(auth: BetterAuth<BetterAuthOptions>, request: Request, provider: string, returnTo: string): Promise<Response> {
+  // returnHeaders: Better Auth sets a signed state cookie here and checks it on the callback,
+  // so its Set-Cookie headers must ride along on our redirect or every callback fails with
+  // state_mismatch.
+  const { headers, response } = await auth.api.signInSocial({
+    body: { provider, callbackURL: returnTo },
+    headers: request.headers,
+    returnHeaders: true,
+  });
+  if (!response?.url) {
+    return Response.json({ error: `openvoid: could not start sign-in for provider "${provider}".` }, { status: 400 });
+  }
+  const redirect = new Headers({ location: response.url, 'cache-control': 'no-store' });
+  for (const cookie of headers.getSetCookie()) redirect.append('set-cookie', cookie);
+  return new Response(null, { status: 302, headers: redirect });
+}
 
 export async function createMode(ctx: AuthModeContext): Promise<AuthMode> {
   const config = parseConfig(ctx.vars);
@@ -27,23 +44,6 @@ export async function createMode(ctx: AuthModeContext): Promise<AuthMode> {
   const options = buildBetterAuthOptions(ctx, config, database.database);
   const auth = betterAuth(options);
   const basePath = ctx.basePath;
-
-  async function startSignIn(request: Request, provider: string, returnTo: string): Promise<Response> {
-    // returnHeaders: Better Auth sets a signed state cookie here and checks it on the callback,
-    // so its Set-Cookie headers must ride along on our redirect or every callback fails with
-    // state_mismatch.
-    const { headers, response } = await auth.api.signInSocial({
-      body: { provider, callbackURL: returnTo },
-      headers: request.headers,
-      returnHeaders: true,
-    });
-    if (!response?.url) {
-      return Response.json({ error: `openvoid: could not start sign-in for provider "${provider}".` }, { status: 400 });
-    }
-    const redirect = new Headers({ location: response.url, 'cache-control': 'no-store' });
-    for (const cookie of headers.getSetCookie()) redirect.append('set-cookie', cookie);
-    return new Response(null, { status: 302, headers: redirect });
-  }
 
   return {
     name: 'better-auth',
@@ -56,7 +56,7 @@ export async function createMode(ctx: AuthModeContext): Promise<AuthMode> {
       if (url.pathname.startsWith(`${basePath}/login/`)) {
         const provider = decodeURIComponent(url.pathname.slice(`${basePath}/login/`.length));
         if (!provider) return null;
-        return startSignIn(request, provider, safeReturnTo(url.searchParams.get('returnTo')));
+        return startSignIn(auth, request, provider, safeReturnTo(url.searchParams.get('returnTo')));
       }
       if (url.pathname === `${basePath}/login`) {
         return Response.json(
@@ -77,15 +77,15 @@ export async function createMode(ctx: AuthModeContext): Promise<AuthMode> {
     },
 
     async resolve(request: Request): Promise<AuthSession | null> {
-      const result = await auth.api.getSession({ headers: request.headers });
-      if (!result) return null;
+      const current = await auth.api.getSession({ headers: request.headers });
+      if (!current) return null;
       const context = await auth.$context;
-      const user = await loadAuthUser(context.adapter, result.user as unknown as UserRow);
+      const user = await loadAuthUser(context.adapter, current.user);
       return {
-        id: result.session.id,
+        id: current.session.id,
         user,
-        createdAt: new Date(result.session.createdAt).getTime(),
-        expiresAt: new Date(result.session.expiresAt).getTime(),
+        createdAt: new Date(current.session.createdAt).getTime(),
+        expiresAt: new Date(current.session.expiresAt).getTime(),
       };
     },
 

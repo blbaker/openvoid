@@ -18,7 +18,6 @@ export async function createDatabaseBinding(ctx: AuthModeContext): Promise<Datab
     const pool = new pg.Pool({ connectionString: databaseUrl, max: Number(ctx.vars.OPENVOID_PG_POOL_MAX ?? 10) });
     return { database: pool, close: () => pool.end() };
   }
-  // Same D1-compatible binding the app's own void/db uses, so accounts live in the same file.
   const db = ctx.env.DB as SqliteD1Database | undefined;
   if (!db) throw new Error('openvoid: better-auth mode needs env.DB for a SQLite app.');
   return {
