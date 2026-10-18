@@ -18,6 +18,10 @@ export type BetterAuthModeConfig = {
   baseURL: string;
   secret: string;
   emailAndPassword: boolean;
+  /** OPENVOID_AUTH_SESSION_DAYS, shared by every mode (default 30). */
+  sessionSeconds: number;
+  /** OPENVOID_AUTH_SECURE_COOKIES: 1 forces Secure, 0 never; unset follows OPENVOID_PUBLIC_URL's scheme. */
+  secureCookies: boolean | undefined;
   google?: SocialConfig;
   github?: SocialConfig;
   oidc: OidcProviderConfig[];
@@ -76,10 +80,17 @@ function parseOidcProviders(vars: Vars): OidcProviderConfig[] {
 export function parseConfig(vars: Vars): BetterAuthModeConfig {
   const baseURL = required(vars, 'OPENVOID_PUBLIC_URL');
   const secret = required(vars, 'BETTER_AUTH_SECRET');
+  const days = Number(vars.OPENVOID_AUTH_SESSION_DAYS ?? 30);
+  if (!Number.isFinite(days) || days <= 0) {
+    throw new Error(`openvoid: OPENVOID_AUTH_SESSION_DAYS must be a positive number, got "${vars.OPENVOID_AUTH_SESSION_DAYS}".`);
+  }
+  const secure = vars.OPENVOID_AUTH_SECURE_COOKIES;
   return {
     baseURL,
     secret,
     emailAndPassword: vars.OPENVOID_AUTH_EMAIL_PASSWORD !== '0',
+    sessionSeconds: Math.round(days * 86400),
+    secureCookies: secure === '1' ? true : secure === '0' ? false : undefined,
     google: socialPair(vars, 'OPENVOID_AUTH_GOOGLE'),
     github: socialPair(vars, 'OPENVOID_AUTH_GITHUB'),
     oidc: parseOidcProviders(vars),

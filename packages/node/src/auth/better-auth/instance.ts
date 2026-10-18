@@ -61,7 +61,9 @@ export function buildBetterAuthOptions(ctx: AuthModeContext, cfg: BetterAuthMode
     socialProviders,
     plugins,
     hooks: { before: rejectClientGroups },
+    session: { expiresIn: cfg.sessionSeconds },
     advanced: {
+      ...(cfg.secureCookies === undefined ? {} : { useSecureCookies: cfg.secureCookies }),
       // OpenVoid always runs mode.migrate() before serving traffic (server start, dev server,
       // the `migrate` command); Better Auth's own at-construction schema check would otherwise
       // log a "missing tables" error on every cold start, before that migrate() call lands.
