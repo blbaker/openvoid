@@ -3,7 +3,7 @@
 # helpers used here ($ROOT, $WORK, log, wait_http, COMPOSE_PROJECTS).
 scenario_proxyoauth() {
   log "proxyoauth: oauth2-proxy + Dex signing in through the real proxy"
-  local ctx="$WORK/proxyoauth-ctx" port=3440 project=openvoid-d-proxy
+  local ctx="$WORK/proxyoauth-ctx" port=3440 project=openvoid-e2e-proxy
   local secret="openvoid-e2e-proxyoauth-secret-$$"
   local recipe="$ROOT/recipes/auth-proxy"
 

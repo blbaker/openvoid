@@ -6,9 +6,9 @@ scenario_oidc() {
   local base="http://127.0.0.1:$port"
   local issuer="http://127.0.0.1:$dex_port/dex"
 
-  docker rm -f openvoid-a-dex >/dev/null 2>&1 || true
-  CONTAINERS+=(openvoid-a-dex)
-  docker run -d --name openvoid-a-dex -p "127.0.0.1:$dex_port:5556" \
+  docker rm -f openvoid-e2e-oidc-dex >/dev/null 2>&1 || true
+  CONTAINERS+=(openvoid-e2e-oidc-dex)
+  docker run -d --name openvoid-e2e-oidc-dex -p "127.0.0.1:$dex_port:5556" \
     -v "$ROOT/recipes/auth-oidc/dev/config.yaml:/etc/dex/config.yaml:ro" \
     ghcr.io/dexidp/dex:v2.45.1 dex serve /etc/dex/config.yaml >/dev/null
   wait_http "$issuer/.well-known/openid-configuration" 30

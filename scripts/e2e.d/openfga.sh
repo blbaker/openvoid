@@ -7,7 +7,7 @@
 # since proxy mode has no sign-in event for `onSignIn` to hook — see recipes/authz-openfga).
 scenario_openfga() {
   log "openfga: OpenFGA authorization (examples/notes, proxy identity)"
-  local fga_port=46280 port=3420 base="http://127.0.0.1:3420" fga_name=openvoid-b-fga
+  local fga_port=46280 port=3420 base="http://127.0.0.1:3420" fga_name=openvoid-e2e-fga
 
   docker rm -f "$fga_name" >/dev/null 2>&1 || true
   docker run -d --name "$fga_name" -p "127.0.0.1:$fga_port:8080" openfga/openfga run >/dev/null

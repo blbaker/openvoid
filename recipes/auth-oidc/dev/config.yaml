@@ -2,7 +2,7 @@
 # secret and the one static user's password below are checked into git on purpose.
 #
 # Run it:
-#   docker run -d --name openvoid-a-dex -p 127.0.0.1:55560:5556 \
+#   docker run -d --name openvoid-dex -p 127.0.0.1:55560:5556 \
 #     -v "$PWD/recipes/auth-oidc/dev/config.yaml:/etc/dex/config.yaml:ro" \
 #     ghcr.io/dexidp/dex:v2.45.1 dex serve /etc/dex/config.yaml
 #
