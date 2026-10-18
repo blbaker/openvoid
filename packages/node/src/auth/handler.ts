@@ -1,5 +1,5 @@
-// Wires the configured identity mode into the request path. Used by the production server
-// (server.ts) and the Vite dev server (plugin.ts).
+// Wires the configured identity mode into the request path, for the production server and the
+// Vite dev server alike.
 //
 //   OPENVOID_AUTH=oidc | proxy | better-auth     which mode signs users in (unset: no sign-in)
 //   OPENVOID_AUTH_PATH=/auth                     URL prefix the mode owns

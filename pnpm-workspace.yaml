@@ -7,3 +7,7 @@ allowBuilds:
   better-sqlite3: false
 minimumReleaseAgeExclude:
   - kysely@0.29.7
+# @openfga/sdk 0.9.7 (latest) pins axios 1.19.0, which has 12 advisories (6 high) fixed in 1.20.0.
+# Drop this once the SDK depends on a fixed axios itself.
+overrides:
+  axios: 1.20.0

@@ -1,5 +1,5 @@
-// Production entry used by builds that include the openvoid() Vite plugin. The plugin replaces
-// Void's generated Node server (.void/index.ts) with a call to startServer().
+// The production server. A build made with the openvoid() Vite plugin runs startServer() in
+// place of Void's own generated Node server.
 //
 //   node dist/ssr/index.js            start the server (applies pending migrations first by default)
 //   node dist/ssr/index.js migrate    apply pending migrations, then exit
