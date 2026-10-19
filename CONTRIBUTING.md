@@ -46,3 +46,7 @@ See [recipes/README.md](recipes/README.md#adding-a-recipe).
 - One change per pull request, with tests that fail without it.
 - Conventional commit messages (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
 - In the description, list what you checked and how, and anything you were unsure about.
+
+## Releases
+
+Maintainers publish to npm from CI with trusted publishing. See [RELEASING.md](RELEASING.md).

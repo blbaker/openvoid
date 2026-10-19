@@ -1,0 +1,67 @@
+name: release
+
+# Publishes @blbaker/openvoid to npm with trusted publishing (OIDC), so no npm token is stored
+# anywhere. Pushing a tag vX.Y.Z that matches packages/node/package.json stages that version on
+# npm, and it goes live only after a maintainer approves it with 2FA. Pull requests that touch the
+# package run the same checks without uploading anything. Setup and release steps: RELEASING.md.
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/release-check.sh
+      - packages/node/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: package check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/release-check.sh
+
+  publish:
+    name: stage on npm
+    needs: check
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    # The trusted publisher on npmjs.com names this environment, and the environment only accepts
+    # v* tags, so a branch push or a pull request can't reach the publish step.
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Only release commits that are on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$GITHUB_REF_NAME points at a commit that isn't on main"; exit 1; }
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/release-check.sh "$GITHUB_REF_NAME"
+      - name: Stage the release (approve it on npm with 2FA to publish)
+        working-directory: packages/node
+        run: npm stage publish
